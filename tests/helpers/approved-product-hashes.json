@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "algorithm": "sha256",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "2774055162f92dd65c83efd102914267f6b804f420362ef37ca690cd4794267b"
+    },
+    {
+      "path": "background.js",
+      "sha256": "eff50d2100eca6e8b9a3818ac7323907d8db0f9f419857fd23e5cb92c7d7e2f9"
+    },
+    {
+      "path": "content/app-controller.js",
+      "sha256": "95c8e33115286de6f64199dcf7c490cdd5891e83c5a3fbd9655270ab233edc75"
+    },
+    {
+      "path": "content/app.js",
+      "sha256": "561af7fa70c24a4e665496d284a0cbdf97e70bbec28be8638bba78debfca24e5"
+    },
+    {
+      "path": "content/content.js",
+      "sha256": "c4bf8ced1c45524015f7d5977893b5e29df786b627966ebc2bf2e2ae085fc030"
+    },
+    {
+      "path": "content/markdown.js",
+      "sha256": "e40c04fed4abe7cc105b3955d0c20b88a37b9963b2c161073a4a707a3e00396a"
+    },
+    {
+      "path": "content/panel.css",
+      "sha256": "7f70f83950a870fd4b1b03b4bd710378d6d370f6debdf9b60def7fb565f28383"
+    },
+    {
+      "path": "content/panel.js",
+      "sha256": "9cef020cbcc7eaa27c68fd997616bf58e85369c89537e6683394f4bcf0b581d5"
+    },
+    {
+      "path": "icons/icon-128.png",
+      "sha256": "37faa3871958ccb7a5dacb21d91f0ebeb8caab1950a94de03bf7ebb906b53523"
+    },
+    {
+      "path": "icons/icon-16.png",
+      "sha256": "088338123e2ac5f603cd71f5fef6636f64653b49f14e94ceb8c53cacf60a0c3a"
+    },
+    {
+      "path": "icons/icon-32.png",
+      "sha256": "8a764c88ae97504b78c6af0c43dfc9bae18fb2ab8512e4fbe5e4fb5c86ce1d46"
+    },
+    {
+      "path": "icons/icon-48.png",
+      "sha256": "3762dc09e4b95e8c099a8b401865734e2774784b7c3e692da1a859d724775978"
+    },
+    {
+      "path": "manifest.json",
+      "sha256": "4d7ca3c589f21f09c386ea9c9aef8cff892b4ebc814052cf8a70cb60b566bb3f"
+    },
+    {
+      "path": "options/options.css",
+      "sha256": "feb58a7ba807db77f1774efbb96fee06c4b6ca70e65569643b90fe08342f6302"
+    },
+    {
+      "path": "options/options.html",
+      "sha256": "fcc0f31a9e372533de410899968da16714fa5f3c17b384a4dae73aefb9817f5e"
+    },
+    {
+      "path": "options/options.js",
+      "sha256": "05dbec7b08ce0ddc67be3c9dbe379def481a3002c7ede725e81c799b93bf5eae"
+    },
+    {
+      "path": "options/save-flow.js",
+      "sha256": "d7e89af85ba38701de3ba7cd474d2ff7fdd7baa1da47ad7833119a85ee21e65b"
+    },
+    {
+      "path": "package.json",
+      "sha256": "ccb93f829b4f1452d18b23193391dc58b40624fbf5dbda5025a3a96cdc2bf724"
+    },
+    {
+      "path": "popup/popup-controller.js",
+      "sha256": "0c254b0913f74288a00b91b78f66cf317bc3610bea09e59354f4b6ec2e83c745"
+    },
+    {
+      "path": "popup/popup.css",
+      "sha256": "41e00af57866db19de253926e3e6e3f47f6f7cdaaad8ab85dd9db9195438df6d"
+    },
+    {
+      "path": "popup/popup.html",
+      "sha256": "563e9acd0d3deae0595d4a8d4c3127b5755f911fd0ef1561ad6274be5790aefa"
+    },
+    {
+      "path": "popup/popup.js",
+      "sha256": "485ff06f56011107a85d2117dbe4d6cdc9e460e23205e8999ae1beef8a8e8f36"
+    },
+    {
+      "path": "scripts/generate_icons.py",
+      "sha256": "132da170774a2ec082f84e2104738c9891181354991bbc0346709f884c7c85c2"
+    },
+    {
+      "path": "shared/api.js",
+      "sha256": "588a634c2c1198676a2b16ffe74ce97d255f7b83130b38e5c3cc7d5a2b546d7e"
+    },
+    {
+      "path": "shared/controller.js",
+      "sha256": "245a6345d5eab8c65cd653c5e26aa71e60b9c5cf06d5a4afd7b19ea92e230ce6"
+    },
+    {
+      "path": "shared/defaults.js",
+      "sha256": "e25c46956c60e896de7898b349d352604bd7ca84f9222608cfc6643c46ae7c4f"
+    },
+    {
+      "path": "shared/selection.js",
+      "sha256": "e2ec9d4c9515bbe9b7fa3a2110b7d639f7dcf34e404b534e82720b23cb1c4393"
+    },
+    {
+      "path": "shared/settings.js",
+      "sha256": "7abdb373c29d71c895345602c6a89b4cf8c63ad5856997edabfcc71655760cbb"
+    }
+  ]
+}

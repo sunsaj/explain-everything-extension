@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Selection Explainer settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <p class="eyebrow">Selection Explainer</p>
+      <h1 id="pageTitle">Settings</h1>
+      <p class="privacy-note">
+        Your selected text and API key are sent only to the LiteLLM endpoint you configure.
+        The extension has no analytics and does not send a request until you explicitly ask for an explanation. When internet search is enabled, the query may also be sent to the model provider’s search service.
+      </p>
+    </header>
+
+    <form aria-labelledby="pageTitle" aria-busy="true" novalidate>
+      <div id="validationSummary" class="validation-summary" role="alert" tabindex="-1" hidden></div>
+
+      <section class="settings-section" aria-labelledby="connectionHeading">
+        <div class="section-heading">
+          <h2 id="connectionHeading">LiteLLM connection</h2>
+          <p>Use a trusted HTTPS endpoint. Local development may use an HTTP loopback address.</p>
+        </div>
+
+        <div class="field-grid">
+          <div class="field field-wide">
+            <label for="endpoint">LiteLLM URL</label>
+            <input id="endpoint" name="endpoint" type="url" inputmode="url" autocomplete="url"
+              aria-describedby="endpointHint endpointError" required disabled>
+            <p id="endpointHint" class="hint">Enter a base URL, a /v1 URL, or a full chat-completions or responses URL.</p>
+            <p id="endpointError" class="field-error" data-error-for="endpoint"></p>
+          </div>
+
+          <div class="field field-wide">
+            <label for="apiKey">API key</label>
+            <div class="key-control">
+              <input id="apiKey" name="apiKey" type="password" autocomplete="off"
+                aria-describedby="apiKeyHint apiKeyError" required disabled>
+              <button id="toggleKey" class="secondary-button key-toggle" type="button" aria-pressed="false" disabled>Show</button>
+            </div>
+            <p id="apiKeyHint" class="hint">Stored locally by Chrome and sent only to your configured endpoint.</p>
+            <p id="apiKeyError" class="field-error" data-error-for="apiKey"></p>
+          </div>
+
+          <div class="field">
+            <label for="model">Model or LiteLLM alias</label>
+            <input id="model" name="model" type="text" autocomplete="off"
+              aria-describedby="modelError" required disabled>
+            <p id="modelError" class="field-error" data-error-for="model"></p>
+          </div>
+
+          <div class="field">
+            <label for="level">Default explanation level</label>
+            <select id="level" name="level" aria-describedby="levelError" disabled>
+              <option value="child">10-year-old</option>
+              <option value="engineer">Engineer</option>
+            </select>
+            <p id="levelError" class="field-error" data-error-for="level"></p>
+          </div>
+
+          <div class="field field-wide web-search-setting">
+            <label class="checkbox-setting" for="webSearchEnabled">
+              <input id="webSearchEnabled" name="webSearchEnabled" type="checkbox" disabled>
+              <span>
+                <strong>Enable internet search by default</strong>
+                <small>Uses the Responses API and may use substantially more time, tokens, and cost. You can override it for each explanation.</small>
+              </span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-section" aria-labelledby="promptHeading">
+        <div class="section-heading prompt-heading">
+          <div>
+            <h2 id="promptHeading">System prompt</h2>
+            <p>Set the instructions used for every explanation.</p>
+          </div>
+          <button id="restorePrompt" class="secondary-button" type="button" disabled>Restore default prompt</button>
+        </div>
+
+        <div class="field">
+          <label class="visually-hidden" for="systemPrompt">System prompt</label>
+          <textarea id="systemPrompt" name="systemPrompt" rows="12"
+            aria-describedby="systemPromptError" required disabled></textarea>
+          <p id="systemPromptError" class="field-error" data-error-for="systemPrompt"></p>
+        </div>
+      </section>
+
+      <div class="button-row">
+        <button id="saveSettings" class="primary-button" type="submit" disabled>Save and grant access</button>
+        <button id="testConnection" class="secondary-button" type="button" disabled>Test connection</button>
+      </div>
+
+      <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></p>
+    </form>
+  </main>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>
