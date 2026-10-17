@@ -5,9 +5,10 @@ import { DEFAULT_REQUEST_TIMEOUT_MS, requestExplanation } from "../shared/api.js
 const settings = {
   endpoint: "https://proxy.example.com/litellm/",
   apiKey: "secret-key",
-  model: "engineering-model",
-  systemPrompt: "Explain clearly."
+  model: "engineering-model"
 };
+
+const profilePrompt = "Use diagrams and concise bullets.";
 
 function successfulResponse(content = "Explained") {
   return {
@@ -19,27 +20,27 @@ function successfulResponse(content = "Explained") {
   };
 }
 
-test("default timeout stays below Chrome\'s 30-second fetch-response limit", () => {
+test("default timeout stays below Chrome's 30-second fetch-response limit", () => {
   assert.equal(DEFAULT_REQUEST_TIMEOUT_MS, 25_000);
   assert.ok(DEFAULT_REQUEST_TIMEOUT_MS < 30_000);
 });
 
 test("returns trimmed assistant content from a successful completion request", async () => {
-  const result = await requestExplanation(settings, "Selected text", "child", {
+  const result = await requestExplanation(settings, "Selected text", profilePrompt, {
     fetchImpl: async () => successfulResponse("  Explained clearly.  ")
   });
 
   assert.equal(result, "Explained clearly.");
 });
 
-test("sends a hardened normalized POST request with the API key only in the Bearer header", async () => {
+test("sends the resolved profile prompt in a hardened normalized completion request", async () => {
   let captured;
   const fetchImpl = async (url, init) => {
     captured = { url, init };
     return successfulResponse();
   };
 
-  await requestExplanation(settings, "Selected text", "engineer", { fetchImpl });
+  await requestExplanation(settings, "Selected text", profilePrompt, { fetchImpl });
 
   assert.equal(captured.url, "https://proxy.example.com/litellm/v1/chat/completions");
   assert.equal(captured.init.method, "POST");
@@ -52,6 +53,9 @@ test("sends a hardened normalized POST request with the API key only in the Bear
   assert.equal(typeof captured.init.signal?.aborted, "boolean");
   const body = JSON.parse(captured.init.body);
   assert.equal(body.model, "engineering-model");
+  assert.match(body.messages[0].content, /Use diagrams and concise bullets/);
+  assert.doesNotMatch(body.messages[0].content, /Audience: engineer|10-year-old/i);
+  assert.match(body.messages[0].content, /untrusted quoted data/i);
   assert.equal(body.messages[1].content, "BEGIN SELECTED MATERIAL\nSelected text\nEND SELECTED MATERIAL");
   assert.equal(captured.init.body.includes("secret-key"), false);
 });
@@ -68,7 +72,7 @@ test("aborts a slow request and returns the sanitized timeout error", async () =
   };
 
   await assert.rejects(
-    requestExplanation(settings, "Selected text", "child", { fetchImpl, timeoutMs: 5 }),
+    requestExplanation(settings, "Selected text", profilePrompt, { fetchImpl, timeoutMs: 5 }),
     (error) => {
       assert.equal(error.code, "TIMEOUT");
       assert.equal(error.message, "The request took longer than 25 seconds.");
@@ -81,7 +85,7 @@ test("aborts a slow request and returns the sanitized timeout error", async () =
 
 test("clears the abort timer after an early successful response", async () => {
   let capturedSignal;
-  const result = await requestExplanation(settings, "Selected text", "child", {
+  const result = await requestExplanation(settings, "Selected text", profilePrompt, {
     timeoutMs: 5,
     fetchImpl: async (_url, init) => {
       capturedSignal = init.signal;
@@ -103,7 +107,7 @@ test("maps a 401 response without exposing the API key or provider body", async 
   });
 
   await assert.rejects(
-    requestExplanation(settings, "Selected text", "child", { fetchImpl }),
+    requestExplanation(settings, "Selected text", profilePrompt, { fetchImpl }),
     (error) => {
       assert.equal(error.code, "AUTH");
       assert.equal(error.status, 401);
@@ -124,7 +128,7 @@ test("maps invalid JSON to a sanitized malformed-response error", async () => {
   });
 
   await assert.rejects(
-    requestExplanation(settings, "Selected text", "child", { fetchImpl }),
+    requestExplanation(settings, "Selected text", profilePrompt, { fetchImpl }),
     (error) => {
       assert.equal(error.code, "MALFORMED_RESPONSE");
       assert.equal(error.message, "The endpoint returned invalid JSON.");
@@ -144,7 +148,7 @@ test("rejects a structurally incompatible completion response", async () => {
   });
 
   await assert.rejects(
-    requestExplanation(settings, "Selected text", "child", { fetchImpl }),
+    requestExplanation(settings, "Selected text", profilePrompt, { fetchImpl }),
     (error) => error.code === "MALFORMED_RESPONSE"
       && error.message === "The endpoint did not return a compatible chat response."
   );
@@ -156,7 +160,7 @@ test("rejects completion messages with a missing or non-assistant role", async (
     { role: "user", content: "Explained" }
   ]) {
     await assert.rejects(
-      requestExplanation(settings, "Selected text", "child", {
+      requestExplanation(settings, "Selected text", profilePrompt, {
         fetchImpl: async () => ({
           ok: true,
           status: 200,
@@ -178,7 +182,7 @@ test("does not trust coded errors thrown by the fetch dependency", async () => {
   };
 
   await assert.rejects(
-    requestExplanation(settings, "Selected text", "child", { fetchImpl }),
+    requestExplanation(settings, "Selected text", profilePrompt, { fetchImpl }),
     (error) => {
       assert.equal(error.code, "NETWORK");
       assert.equal(error.message, "Could not reach the configured LiteLLM endpoint.");
@@ -195,7 +199,7 @@ test("maps raw fetch failures to a sanitized network error", async () => {
   };
 
   await assert.rejects(
-    requestExplanation(settings, "Selected text", "child", { fetchImpl }),
+    requestExplanation(settings, "Selected text", profilePrompt, { fetchImpl }),
     (error) => {
       assert.equal(error.code, "NETWORK");
       assert.equal(error.message, "Could not reach the configured LiteLLM endpoint.");
@@ -205,10 +209,9 @@ test("maps raw fetch failures to a sanitized network error", async () => {
   );
 });
 
-
-test("uses the Responses API and native web search when enabled", async () => {
+test("uses the resolved profile prompt in the Responses API with native web search", async () => {
   let captured;
-  const explanation = await requestExplanation(settings, "Current selected fact", "engineer", {
+  const explanation = await requestExplanation(settings, "Current selected fact", profilePrompt, {
     webSearchEnabled: true,
     fetchImpl: async (url, init) => {
       captured = { url, init };
@@ -234,14 +237,16 @@ test("uses the Responses API and native web search when enabled", async () => {
   const body = JSON.parse(captured.init.body);
   assert.deepEqual(body.tools, [{ type: "web_search" }]);
   assert.equal(body.tool_choice, "auto");
+  assert.match(body.instructions, /Use diagrams and concise bullets/);
+  assert.doesNotMatch(body.instructions, /Audience: engineer|10-year-old/i);
+  assert.match(body.instructions, /untrusted quoted data/i);
   assert.match(explanation, /Fresh answer/);
   assert.ok(explanation.includes("https://example.com/current"));
 });
 
-
 test("returns an actionable error when native web search is rejected", async () => {
   await assert.rejects(
-    requestExplanation(settings, "Current fact", "child", {
+    requestExplanation(settings, "Current fact", profilePrompt, {
       webSearchEnabled: true,
       fetchImpl: async () => ({ ok: false, status: 400 })
     }),

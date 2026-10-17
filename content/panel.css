@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Selection Inter";
+  src: url("../assets/fonts/InterVariable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 :host {
   --se-surface: #ffffff;
   --se-surface-muted: #f4f7fb;
@@ -17,7 +25,10 @@
   display: block;
   color: var(--se-text);
   color-scheme: light dark;
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Selection Inter", "Segoe UI Variable Text", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-weight: 400;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
   font-size: 16px;
   line-height: 1.5;
   text-align: left;
@@ -69,7 +80,7 @@ option {
   box-shadow: 0 10px 28px rgba(35, 68, 176, 0.34);
   color: var(--se-accent-text);
   cursor: pointer;
-  font-weight: 750;
+  font-weight: 600;
   letter-spacing: 0.01em;
   opacity: 0.72;
   transition: background-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease, transform 160ms ease;
@@ -130,7 +141,7 @@ option {
 
 .panel__title {
   font-size: 1.1rem;
-  font-weight: 760;
+  font-weight: 700;
   letter-spacing: -0.01em;
 }
 
@@ -147,7 +158,7 @@ option {
 .button {
   min-width: 44px;
   cursor: pointer;
-  font-weight: 700;
+  font-weight: 600;
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
@@ -219,7 +230,7 @@ select:focus-visible,
 .section-label {
   color: var(--se-text-muted);
   font-size: 0.8rem;
-  font-weight: 750;
+  font-weight: 500;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -270,7 +281,7 @@ select:focus-visible,
 .web-search-text strong {
   color: var(--se-text);
   font-size: 0.9rem;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .web-search-checkbox:focus-visible {
@@ -304,12 +315,13 @@ select:focus-visible,
   flex: 0 0 auto;
   color: var(--se-text-muted);
   font-size: 0.92rem;
+  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
 .status[data-state="error"] {
   color: var(--se-danger);
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .status[data-state="success"] {
@@ -328,6 +340,7 @@ select:focus-visible,
   background: var(--se-surface-muted);
   color: var(--se-text);
   font: inherit;
+  font-weight: 400;
   overflow-wrap: anywhere;
   tab-size: 2;
   white-space: normal;
@@ -336,6 +349,7 @@ select:focus-visible,
 .markdown-content {
   color: var(--se-text);
   font: inherit;
+  font-weight: 400;
   line-height: 1.65;
   overflow-wrap: anywhere;
 }
@@ -356,7 +370,7 @@ select:focus-visible,
 .markdown-content h6 {
   margin: 1.1em 0 0.45em;
   color: var(--se-text);
-  font-weight: 780;
+  font-weight: 700;
   line-height: 1.25;
   letter-spacing: -0.015em;
 }
@@ -390,7 +404,7 @@ select:focus-visible,
 }
 
 .markdown-content strong {
-  font-weight: 780;
+  font-weight: 600;
 }
 
 .markdown-content del {
@@ -399,7 +413,7 @@ select:focus-visible,
 
 .markdown-content a {
   color: var(--se-accent);
-  font-weight: 650;
+  font-weight: 600;
   text-decoration: underline;
   text-decoration-thickness: 0.08em;
   text-underline-offset: 0.16em;
@@ -434,7 +448,7 @@ select:focus-visible,
   border-bottom: 1px solid var(--se-border);
   color: var(--se-text-muted);
   font-size: 0.72rem;
-  font-weight: 750;
+  font-weight: 500;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -502,7 +516,7 @@ select:focus-visible,
 .markdown-content th {
   background: var(--se-surface-muted);
   color: var(--se-text);
-  font-weight: 760;
+  font-weight: 600;
 }
 
 .markdown-content tr:last-child td {
@@ -733,4 +747,387 @@ select:focus-visible,
     animation-iteration-count: 1 !important;
     transition-duration: 0s !important;
   }
+}
+
+
+/* Cupertino Glass visual system */
+:host {
+  --se-surface: rgba(252, 253, 255, 0.94);
+  --se-surface-muted: rgba(242, 245, 250, 0.92);
+  --se-text: #172033;
+  --se-text-muted: #667085;
+  --se-border: rgba(155, 166, 185, 0.42);
+  --se-accent: #1677ff;
+  --se-accent-strong: #0066e6;
+  --se-accent-text: #ffffff;
+  --se-danger: #d92d20;
+  --se-success: #16845b;
+  --se-shadow: 0 30px 80px rgba(29, 41, 64, 0.24), 0 8px 24px rgba(29, 41, 64, 0.12);
+}
+
+.panel {
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(680px, calc(100dvh - 96px));
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  border-radius: 24px;
+  background: var(--se-surface);
+  box-shadow: var(--se-shadow);
+  backdrop-filter: blur(24px) saturate(1.35);
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  transition: width 220ms cubic-bezier(0.2, 0.75, 0.25, 1),
+    max-height 220ms cubic-bezier(0.2, 0.75, 0.25, 1),
+    border-radius 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.panel[data-view="result"] {
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(760px, calc(100dvh - 88px));
+  border-radius: 26px;
+}
+
+.panel__header {
+  min-height: 68px;
+  padding: 12px 12px 12px 20px;
+  border-bottom-color: rgba(155, 166, 185, 0.3);
+}
+
+.panel__title {
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+}
+
+.icon-button {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  border-color: rgba(155, 166, 185, 0.42);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.64);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+
+.panel__body {
+  gap: 13px;
+  padding: 18px 20px 20px;
+}
+
+.field,
+.web-search-control,
+.selection,
+.response {
+  border-color: rgba(155, 166, 185, 0.42);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.field {
+  padding: 10px 12px;
+  border: 1px solid rgba(155, 166, 185, 0.42);
+  border-radius: 14px;
+}
+
+.level-select {
+  border-color: transparent;
+  background: transparent;
+  font-weight: 600;
+}
+
+.web-search-control {
+  border-radius: 14px;
+}
+
+.selection {
+  border-radius: 14px;
+}
+
+.response {
+  border-radius: 16px;
+  background: rgba(247, 249, 252, 0.88);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.status[data-state="success"] {
+  color: #16845b;
+}
+
+.panel__footer {
+  min-height: 70px;
+  padding: 12px 20px 16px;
+  border-top-color: rgba(155, 166, 185, 0.3);
+  background: rgba(252, 253, 255, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.button {
+  min-height: 42px;
+  border-color: rgba(155, 166, 185, 0.42);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  color: #344054;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+
+.button--primary {
+  border-color: transparent;
+  background: linear-gradient(180deg, #2d8cff, #1677ff);
+  color: #ffffff;
+  box-shadow: 0 8px 20px rgba(22, 119, 255, 0.28);
+}
+
+.panel[data-view="result"] > .panel__footer > .button--primary {
+  display: none;
+}
+
+.panel[data-view="result"] .result-actions {
+  justify-content: flex-end;
+}
+
+.panel[data-view="result"] .panel__body {
+  display: grid;
+  min-height: 360px;
+  grid-template-columns: 190px minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(100px, 1fr) auto;
+  grid-template-areas:
+    "level response"
+    "search response"
+    "selection response"
+    "status response";
+  gap: 12px 20px;
+  overflow: hidden;
+  padding: 20px;
+}
+
+.panel[data-view="result"] .field { grid-area: level; }
+.panel[data-view="result"] .web-search-control { grid-area: search; }
+.panel[data-view="result"] .selection { grid-area: selection; align-self: stretch; }
+.panel[data-view="result"] .status { grid-area: status; align-self: end; }
+.panel[data-view="result"] .response {
+  grid-area: response;
+  width: 100%;
+  min-height: 0;
+  max-height: none;
+  align-self: stretch;
+  padding: 22px 24px;
+}
+
+.panel[data-view="result"] .selection-preview {
+  max-height: 10em;
+  -webkit-line-clamp: 7;
+}
+
+.launcher {
+  min-width: 118px;
+  border-color: rgba(255, 255, 255, 0.5);
+  background: linear-gradient(180deg, #79a0ff, #6f8ff7);
+  box-shadow: 0 16px 34px rgba(71, 101, 199, 0.32), inset 0 1px 0 rgba(255,255,255,0.42);
+  color: #101828;
+}
+
+.launcher:hover {
+  background: linear-gradient(180deg, #87aaff, #7292fb);
+  box-shadow: 0 18px 40px rgba(71, 101, 199, 0.38), inset 0 1px 0 rgba(255,255,255,0.48);
+}
+
+@media (prefers-color-scheme: dark) {
+  :host {
+    --se-surface: rgba(15, 23, 40, 0.94);
+    --se-surface-muted: rgba(24, 35, 56, 0.94);
+    --se-text: #f8fafc;
+    --se-text-muted: #aebbd0;
+    --se-border: rgba(104, 124, 156, 0.38);
+    --se-accent: #8facff;
+    --se-accent-strong: #a8bdff;
+    --se-shadow: 0 30px 80px rgba(0, 0, 0, 0.48), 0 8px 24px rgba(0, 0, 0, 0.28);
+  }
+
+  .field,
+  .web-search-control,
+  .selection,
+  .response,
+  .button,
+  .icon-button {
+    border-color: rgba(104, 124, 156, 0.38);
+    background: rgba(24, 35, 56, 0.78);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  }
+
+  .panel__footer {
+    background: rgba(15, 23, 40, 0.76);
+  }
+
+  .button {
+    color: #dce6f5;
+  }
+
+  .button--primary {
+    background: linear-gradient(180deg, #8facff, #7899ff);
+    color: #0d1423;
+  }
+}
+
+@media (max-width: 720px) {
+  .panel[data-view="result"] {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 84px);
+    border-radius: 22px;
+  }
+
+  .panel[data-view="result"] .panel__body {
+    display: grid;
+    min-height: min(540px, calc(100dvh - 230px));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "status" "response";
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .panel[data-view="result"] .field,
+  .panel[data-view="result"] .web-search-control,
+  .panel[data-view="result"] .selection {
+    display: none;
+  }
+
+  .panel[data-view="result"] .response {
+    padding: 18px;
+  }
+}
+
+
+/* Screenshot-driven Cupertino refinements */
+.panel[data-view="result"] .panel__body {
+  grid-template-rows: auto auto auto 1fr;
+}
+
+.panel[data-view="result"] .field {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 5px;
+  padding: 12px 14px;
+}
+
+.panel[data-view="result"] .level-select {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 24px 2px 0;
+  font-size: 0.92rem;
+}
+
+.panel[data-view="result"] .selection {
+  align-self: start;
+  min-height: 0;
+  max-height: 190px;
+  overflow: hidden;
+}
+
+.panel[data-view="result"] .status {
+  align-self: end;
+}
+
+.panel[data-view="result"] .web-search-control {
+  min-height: 48px;
+  align-items: center;
+  padding: 10px 12px;
+}
+
+.panel[data-view="result"] .web-search-text > span {
+  display: none;
+}
+
+.web-search-checkbox {
+  position: relative;
+  appearance: none;
+  width: 42px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: #cbd2de;
+  box-shadow: inset 0 0 0 1px rgba(77, 91, 117, 0.18);
+  transition: background-color 160ms ease;
+}
+
+.web-search-checkbox::before {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 5px rgba(31, 42, 68, 0.28);
+  content: "";
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.web-search-checkbox:checked {
+  background: #34c759;
+}
+
+.web-search-checkbox:checked::before {
+  transform: translateX(18px);
+}
+
+.response:focus-visible {
+  outline: 2px solid var(--se-accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgba(22, 119, 255, 0.13), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.panel[data-view="result"] > .panel__footer::before {
+  margin-right: auto;
+  color: var(--se-text-muted);
+  content: "Markdown and citations rendered safely";
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+@media (prefers-color-scheme: dark) {
+  .web-search-checkbox {
+    background: #44516a;
+  }
+
+  .web-search-checkbox:checked {
+    background: #34c759;
+  }
+}
+
+@media (max-width: 720px) {
+  .panel[data-view="result"] .field,
+  .panel[data-view="result"] .web-search-control,
+  .panel[data-view="result"] .selection {
+    display: none;
+  }
+
+  .panel[data-view="result"] > .panel__footer::before {
+    display: none;
+  }
+}
+
+
+/* Modern variable typography */
+.panel__title,
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  font-family: "Selection Inter", "Segoe UI Variable Display", "SF Pro Display", "Segoe UI Variable Text", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-weight: 700;
+}
+
+.button,
+.level-select,
+.web-search-text strong {
+  font-weight: 600;
+}
+
+.field__label,
+.section-label,
+.md-code-language {
+  font-weight: 500;
 }

@@ -38,6 +38,8 @@ const ALLOWED_MANIFEST_TOP_LEVEL_FIELDS = new Set([
 ]);
 
 const ALLOWED_DIRECTORIES = new Set([
+  "assets",
+  "assets/fonts",
   "content",
   "icons",
   "options",
@@ -56,7 +58,7 @@ const ALLOWED_TOP_LEVEL_FILES = new Set([
   "package.json"
 ]);
 
-const KNOWN_BINARY_EXTENSIONS = new Set([".png"]);
+const KNOWN_BINARY_EXTENSIONS = new Set([".png", ".woff2"]);
 const NETWORK_PRIMITIVES = [
   "fetch",
   "XMLHttpRequest",
@@ -77,6 +79,7 @@ const SAFE_SHARED_API_IMPORTS = new Set([
   "permissionPatternForEndpoint"
 ]);
 const SOURCE_EXTENSIONS = new Set([".css", ".html", ".js"]);
+const PACKAGE_EXCLUDED_ROOT_ENTRIES = new Set([".git", ".gitattributes"]);
 
 function packagePath(extensionRoot, filePath) {
   return relative(extensionRoot, filePath).split(sep).join("/");
@@ -95,6 +98,7 @@ async function walkEntries(directory, extensionRoot = directory) {
   const files = [];
   const directories = [];
   for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    if (directory === extensionRoot && PACKAGE_EXCLUDED_ROOT_ENTRIES.has(entry.name.toLowerCase())) continue;
     const entryPath = join(directory, entry.name);
     if (entry.isDirectory()) {
       directories.push(entryPath);
@@ -122,6 +126,7 @@ function isAllowedDirectory(relativePath) {
 function isAllowedPackageFile(relativePath) {
   if (ALLOWED_TOP_LEVEL_FILES.has(relativePath)) return true;
   return [
+    /^assets\/fonts\/(?:InterVariable\.woff2|OFL\.txt)$/,
     /^content\/[a-z0-9-]+\.(?:css|js)$/,
     /^icons\/icon-(?:16|32|48|128)\.png$/,
     /^options\/[a-z0-9-]+\.(?:css|html|js)$/,

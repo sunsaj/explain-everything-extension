@@ -5,6 +5,8 @@ import { readFile } from 'node:fs/promises';
 const contentUrl = new URL('../content/content.js', import.meta.url);
 const appUrl = new URL('../content/app.js', import.meta.url);
 const controllerUrl = new URL('../content/app-controller.js', import.meta.url);
+const panelUrl = new URL('../content/panel.js', import.meta.url);
+const profileTitlesUrl = new URL('../shared/profile-titles.js', import.meta.url);
 const manifestUrl = new URL('../manifest.json', import.meta.url);
 
 test('content bootstrap is top-frame-only, idempotent, and dynamically imports the local app', async () => {
@@ -33,9 +35,18 @@ test('content app wires panel, selection capture events, sanitized runtime statu
   assert.doesNotMatch(source, /chrome\.storage/);
   assert.doesNotMatch(source, /selectionExplainerSettings/);
   const controllerSource = await readFile(controllerUrl, 'utf8');
+  const panelSource = await readFile(panelUrl, 'utf8');
+  assert.match(controllerSource, /from\s+['"]\.\.\/shared\/profile-titles\.js['"]/);
+  assert.match(panelSource, /from\s+['"]\.\.\/shared\/profile-titles\.js['"]/);
   assert.match(source + controllerSource, /GET_STATUS/);
   assert.match(source + controllerSource, /OPEN_OPTIONS/);
   assert.match(source + controllerSource, /applyPublicStatusChange/);
+  assert.match(controllerSource, /setPromptProfiles/);
+  assert.match(controllerSource, /getPromptProfileId/);
+  assert.match(controllerSource, /promptProfileId/);
+  assert.doesNotMatch(controllerSource, /\b(?:setLevel|getLevel)\b/);
+  assert.doesNotMatch(controllerSource, /\blevel\s*:/);
+  assert.doesNotMatch(controllerSource, /\.prompt\b|\bprompt\s*:/);
 });
 
 test('manifest-declared content executables contain no network or credential handling', async () => {
@@ -59,4 +70,24 @@ test('manifest-declared content executables contain no network or credential han
   assert.doesNotMatch(combined, /\bfetch\s*\(/);
   assert.doesNotMatch(combined, /Authorization/i);
   assert.doesNotMatch(combined, /apiKey/i);
+});
+
+
+test('content-safe profile title utility exposes no prompt data', async () => {
+  const source = await readFile(profileTitlesUrl, 'utf8');
+  const titleUtilities = await import(profileTitlesUrl.href);
+
+  assert.deepEqual(Object.keys(titleUtilities).sort(), [
+    'hasVisibleProfileTitleContent',
+    'profileTitlesEqual',
+    'sanitizeProfileTitle',
+    'unicodeCodePointLength'
+  ]);
+  assert.doesNotMatch(source, /\bprompt\b|DEFAULT_SYSTEM_PROMPT|DEFAULT_PROMPT_PROFILES/i);
+  assert.equal(titleUtilities.profileTitlesEqual('\u0432', '\u1C80'), true);
+  assert.equal(titleUtilities.profileTitlesEqual('Caf\u00E9', 'Cafe\u0301'), true);
+  assert.equal(titleUtilities.profileTitlesEqual('Stra\u00DFe', 'STRASSE'), true);
+  assert.equal(titleUtilities.profileTitlesEqual('\u03BF\u03C3', '\u03BF\u03C2'), true);
+  assert.equal(titleUtilities.sanitizeProfileTitle('A\u200BB'), 'A B');
+  assert.equal(titleUtilities.unicodeCodePointLength('\u{1F600}'.repeat(31)), 31);
 });

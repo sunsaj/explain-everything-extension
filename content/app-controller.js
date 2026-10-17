@@ -1,4 +1,13 @@
-const VALID_LEVELS = new Set(['child', 'engineer']);
+import {
+  hasVisibleProfileTitleContent,
+  profileTitlesEqual,
+  sanitizeProfileTitle,
+  unicodeCodePointLength
+} from '../shared/profile-titles.js';
+
+const PROFILE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+const MAX_PROFILE_COUNT = 20;
+const MAX_PROFILE_TITLE_LENGTH = 60;
 const CONFIGURATION_MESSAGE = 'Configure the LiteLLM endpoint, key, and model first.';
 const STATUS_FAILURE_MESSAGE = 'Could not read extension status. Reload the page and try again.';
 const REQUEST_FAILURE_MESSAGE = 'Could not complete the explanation. Reload the page and try again.';
@@ -78,18 +87,69 @@ export function sendRuntimeMessage(runtime, message) {
   });
 }
 
+function promptProfileSummaries(value) {
+  if (
+    !Array.isArray(value)
+    || value.length < 1
+    || value.length > MAX_PROFILE_COUNT
+  ) {
+    return null;
+  }
+
+  const ids = new Set();
+  const titles = [];
+  const summaries = [];
+  for (const summary of value) {
+    if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+      return null;
+    }
+    const keys = Object.keys(summary);
+    if (
+      keys.length !== 2
+      || !Object.prototype.hasOwnProperty.call(summary, 'id')
+      || !Object.prototype.hasOwnProperty.call(summary, 'title')
+    ) {
+      return null;
+    }
+
+    const { id, title } = summary;
+    const normalizedTitle = sanitizeProfileTitle(title);
+    if (
+      typeof id !== 'string'
+      || !PROFILE_ID_PATTERN.test(id)
+      || ids.has(id)
+      || typeof title !== 'string'
+      || !normalizedTitle
+      || normalizedTitle !== title
+      || !hasVisibleProfileTitleContent(normalizedTitle)
+      || unicodeCodePointLength(normalizedTitle) > MAX_PROFILE_TITLE_LENGTH
+      || titles.some((existingTitle) => profileTitlesEqual(existingTitle, normalizedTitle))
+    ) {
+      return null;
+    }
+    ids.add(id);
+    titles.push(normalizedTitle);
+    summaries.push({ id, title });
+  }
+  return summaries;
+}
+
 function statusFields(value) {
+  const summaries = promptProfileSummaries(value?.promptProfiles);
   if (
     typeof value?.enabled !== 'boolean'
     || typeof value?.configured !== 'boolean'
-    || !VALID_LEVELS.has(value.level)
+    || typeof value?.activePromptProfileId !== 'string'
+    || !summaries
+    || !summaries.some(({ id }) => id === value.activePromptProfileId)
   ) {
     return null;
   }
   return {
     enabled: value.enabled,
     configured: value.configured,
-    level: value.level,
+    activePromptProfileId: value.activePromptProfileId,
+    promptProfiles: summaries,
     webSearchEnabled: typeof value.webSearchEnabled === 'boolean'
       ? value.webSearchEnabled
       : false
@@ -137,12 +197,12 @@ export function createContentController({
   function ensurePanel() {
     if (panel) return panel;
     panel = createPanel({
-      initialLevel: 'child',
       initialWebSearchEnabled: false,
       onExplain: requestCurrentExplanation,
       onRetry: requestCurrentExplanation,
       onCopy: copyExplanation,
-      onSettings: openSettings
+      onSettings: openSettings,
+      onPromptProfileChange: handlePromptProfileChange
     });
     panel.setVisible(false);
     return panel;
@@ -151,6 +211,11 @@ export function createContentController({
   function invalidateResultState() {
     stateGeneration += 1;
     currentExplanation = '';
+  }
+
+  function handlePromptProfileChange() {
+    invalidateResultState();
+    renderSelectionState();
   }
 
   function renderSelectionState() {
@@ -197,7 +262,7 @@ export function createContentController({
 
   function applyStatus(status, { resetPanel }) {
     configured = status.configured;
-    ensurePanel().setLevel(status.level);
+    ensurePanel().setPromptProfiles(status.promptProfiles, status.activePromptProfileId);
     panel.setWebSearchEnabled(status.webSearchEnabled);
     panel.setVisible(status.enabled);
     if (resetPanel) {
@@ -271,6 +336,7 @@ export function createContentController({
     const requestGeneration = stateGeneration;
     latestRequestId = requestId;
     currentExplanation = '';
+    const promptProfileId = panel.getPromptProfileId();
     const webSearchEnabled = panel.getWebSearchEnabled();
     panel.setLoading({ webSearchEnabled });
 
@@ -279,7 +345,7 @@ export function createContentController({
       result = await sendMessage({
         type: 'EXPLAIN_SELECTION',
         text: selection.text,
-        level: panel.getLevel(),
+        promptProfileId,
         webSearchEnabled,
         requestId
       });

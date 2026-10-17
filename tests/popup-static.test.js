@@ -74,6 +74,9 @@ test("popup exposes the accessible local-only action contract", async () => {
   }
 
   assert.match(css, /width\s*:\s*320px/i);
+  assert.match(css, /@font-face[\s\S]*?Selection Inter[\s\S]*?InterVariable\.woff2/i);
+  assert.match(css, /font-family\s*:\s*["']Selection Inter["']/i);
+  assert.match(css, /Segoe UI Variable Text/);
   assert.match(css, /:focus-visible/i);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/i);
   assert.match(script, /from\s*[\x22\x27]\.\/popup-controller\.js[\x22\x27]/);

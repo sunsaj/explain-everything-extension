@@ -21,7 +21,8 @@ function createPanelHarness() {
   const calls = {
     visible: [],
     selections: [],
-    levels: [],
+    promptProfiles: [],
+    promptProfileIds: [],
     webSearch: [],
     loading: [],
     explanations: [],
@@ -29,13 +30,26 @@ function createPanelHarness() {
     announcements: []
   };
   let callbacks;
-  let level = 'child';
+  let promptProfileId = '';
   let webSearchEnabled = false;
   const panel = {
     setVisible(value) { calls.visible.push(value); },
     setSelection(value) { calls.selections.push(value); },
-    setLevel(value) { level = value; calls.levels.push(value); },
-    getLevel() { return level; },
+    setPromptProfiles(summaries, selectedId) {
+      const ids = summaries.map((profile) => profile.id);
+      if (!ids.includes(promptProfileId)) {
+        promptProfileId = ids.includes(selectedId) ? selectedId : (ids[0] ?? '');
+      }
+      calls.promptProfiles.push({
+        summaries: summaries.map((profile) => ({ ...profile })),
+        selectedId
+      });
+    },
+    setPromptProfileId(value) {
+      promptProfileId = value;
+      calls.promptProfileIds.push(value);
+    },
+    getPromptProfileId() { return promptProfileId; },
     setWebSearchEnabled(value) { webSearchEnabled = Boolean(value); calls.webSearch.push(webSearchEnabled); },
     getWebSearchEnabled() { return webSearchEnabled; },
     setLoading(options) { calls.loading.push(options ?? {}); },
@@ -49,7 +63,6 @@ function createPanelHarness() {
     createPanel(options) {
       assert.equal(callbacks, undefined, 'panel must be created once');
       callbacks = options;
-      level = options.initialLevel;
       webSearchEnabled = Boolean(options.initialWebSearchEnabled);
       return panel;
     },
@@ -62,6 +75,23 @@ function validSelection(text) {
   return normalized
     ? { valid: true, text: normalized }
     : { valid: false, text: '', code: 'NO_SELECTION', error: 'Highlight some text first.' };
+}
+
+const PROMPT_PROFILES = Object.freeze([
+  Object.freeze({ id: 'profile-child', title: '10-year-old' }),
+  Object.freeze({ id: 'profile-engineer', title: 'Engineer' })
+]);
+
+function publicStatus(overrides = {}) {
+  return {
+    ok: true,
+    enabled: true,
+    configured: true,
+    webSearchEnabled: false,
+    activePromptProfileId: 'profile-child',
+    promptProfiles: PROMPT_PROFILES.map((profile) => ({ ...profile })),
+    ...overrides
+  };
 }
 
 test('readSelectedText prefers active input and textarea ranges, then falls back to the window selection', () => {
@@ -102,7 +132,7 @@ test('capture keeps the last valid selection and never sends a message by itself
     sendMessage: async (message) => {
       messages.push({ ...message });
       if (message.type === 'GET_STATUS') {
-        return { ok: true, enabled: true, configured: true, level: 'child' };
+        return publicStatus();
       }
       return { ok: true, explanation: 'kept', requestId: message.requestId };
     },
@@ -121,23 +151,22 @@ test('capture keeps the last valid selection and never sends a message by itself
   assert.deepEqual(messages.at(-1), {
     type: 'EXPLAIN_SELECTION',
     text: 'Alpha beta',
-    level: 'child',
+    promptProfileId: 'profile-child',
     webSearchEnabled: false,
     requestId: '1'
   });
 });
 
-test('startup status controls visibility, configuration guidance, and initial level', async () => {
+test('startup status controls visibility, configuration guidance, and active prompt profiles', async () => {
   const panel = createPanelHarness();
   const controller = createContentController({
     createPanel: panel.createPanel,
     validateSelectedText: validSelection,
     readSelection: () => '',
-    sendMessage: async () => ({
-      ok: true,
+    sendMessage: async () => publicStatus({
       enabled: false,
       configured: false,
-      level: 'engineer'
+      activePromptProfileId: 'profile-engineer'
     }),
     writeClipboard: async () => {}
   });
@@ -145,7 +174,10 @@ test('startup status controls visibility, configuration guidance, and initial le
   await controller.start();
 
   assert.equal(panel.calls.visible.at(-1), false);
-  assert.equal(panel.calls.levels.at(-1), 'engineer');
+  assert.deepEqual(panel.calls.promptProfiles.at(-1), {
+    summaries: PROMPT_PROFILES.map((profile) => ({ ...profile })),
+    selectedId: 'profile-engineer'
+  });
   assert.deepEqual(panel.calls.errors.at(-1), {
     message: 'Configure the LiteLLM endpoint, key, and model first.',
     options: { showSettings: true }
@@ -164,7 +196,7 @@ test('newer explanation requests win and stale success or error responses are ig
     sendMessage: async (message) => {
       messages.push({ ...message });
       if (message.type === 'GET_STATUS') {
-        return { ok: true, enabled: true, configured: true, level: 'engineer' };
+        return publicStatus({ activePromptProfileId: 'profile-engineer' });
       }
       return message.requestId === '1' ? first.promise : second.promise;
     },
@@ -176,8 +208,8 @@ test('newer explanation requests win and stale success or error responses are ig
   const firstRequest = panel.callbacks.onExplain();
   const secondRequest = panel.callbacks.onRetry();
   assert.deepEqual(messages.slice(1), [
-    { type: 'EXPLAIN_SELECTION', text: 'selected text', level: 'engineer', webSearchEnabled: false, requestId: '1' },
-    { type: 'EXPLAIN_SELECTION', text: 'selected text', level: 'engineer', webSearchEnabled: false, requestId: '2' }
+    { type: 'EXPLAIN_SELECTION', text: 'selected text', promptProfileId: 'profile-engineer', webSearchEnabled: false, requestId: '1' },
+    { type: 'EXPLAIN_SELECTION', text: 'selected text', promptProfileId: 'profile-engineer', webSearchEnabled: false, requestId: '2' }
   ]);
   assert.equal(panel.calls.loading.length, 2);
 
@@ -202,7 +234,7 @@ test('responses without the latest request ID cannot replace the loading state',
     validateSelectedText: validSelection,
     readSelection: () => 'selected text',
     sendMessage: async (message) => message.type === 'GET_STATUS'
-      ? { ok: true, enabled: true, configured: true, level: 'child' }
+      ? publicStatus()
       : response,
     writeClipboard: async () => {}
   });
@@ -227,7 +259,7 @@ test('only configuration and permission errors expose Settings', async () => {
     readSelection: () => 'selected text',
     sendMessage: async (message) => {
       if (message.type === 'GET_STATUS') {
-        return { ok: true, enabled: true, configured: true, level: 'child' };
+        return publicStatus();
       }
       const code = codes[errorIndex++];
       return { ok: false, error: { code, message: code + ' message' }, requestId: message.requestId };
@@ -260,7 +292,7 @@ test('copy uses only the current explanation and settings sends OPEN_OPTIONS', a
     sendMessage: async (message) => {
       messages.push({ ...message });
       if (message.type === 'GET_STATUS') {
-        return { ok: true, enabled: true, configured: true, level: 'child' };
+        return publicStatus();
       }
       if (message.type === 'OPEN_OPTIONS') return { ok: true };
       return { ok: true, explanation: 'current explanation', requestId: message.requestId };
@@ -296,7 +328,7 @@ test('PUBLIC_STATUS_CHANGED applies only sanitized public fields without another
     readSelection: () => '',
     sendMessage: async (message) => {
       messages.push(message);
-      return { ok: true, enabled: true, configured: true, level: 'child' };
+      return publicStatus();
     },
     writeClipboard: async () => {}
   });
@@ -306,22 +338,57 @@ test('PUBLIC_STATUS_CHANGED applies only sanitized public fields without another
     type: 'PUBLIC_STATUS_CHANGED',
     enabled: false,
     configured: false,
-    level: 'engineer'
+    webSearchEnabled: true,
+    activePromptProfileId: 'profile-engineer',
+    promptProfiles: PROMPT_PROFILES.map((profile) => ({ ...profile }))
   };
   Object.defineProperty(pushedStatus, 'apiKey', {
     get() { throw new Error('private fields must not be read'); }
   });
 
+  const malformedProfile = { id: 'unsafe', title: 'Unsafe' };
+  Object.defineProperty(malformedProfile, 'prompt', {
+    enumerable: true,
+    get() { throw new Error('private prompt text must not be read'); }
+  });
+
   assert.equal(controller.applyPublicStatusChange(pushedStatus), true);
   assert.equal(controller.applyPublicStatusChange({
-    type: 'PUBLIC_STATUS_CHANGED',
-    enabled: 'false',
-    configured: false,
-    level: 'engineer'
+    ...pushedStatus,
+    enabled: 'false'
+  }), false);
+  assert.equal(controller.applyPublicStatusChange({
+    ...pushedStatus,
+    activePromptProfileId: 'unsafe',
+    promptProfiles: [malformedProfile]
+  }), false);
+  assert.equal(controller.applyPublicStatusChange({
+    ...pushedStatus,
+    activePromptProfileId: 'bad',
+    promptProfiles: [{ id: 'bad', title: 'Bad\u0000Title' }]
+  }), false);
+  assert.equal(controller.applyPublicStatusChange({
+    ...pushedStatus,
+    activePromptProfileId: 'street-one',
+    promptProfiles: [
+      { id: 'street-one', title: 'Straße' },
+      { id: 'street-two', title: 'STRASSE' }
+    ]
+  }), false);
+  assert.equal(controller.applyPublicStatusChange({
+    ...pushedStatus,
+    activePromptProfileId: 've-one',
+    promptProfiles: [
+      { id: 've-one', title: '\u0432' },
+      { id: 've-two', title: '\u1C80' }
+    ]
   }), false);
   assert.deepEqual(messages, [{ type: 'GET_STATUS' }]);
   assert.equal(panel.calls.visible.at(-1), false);
-  assert.equal(panel.calls.levels.at(-1), 'engineer');
+  assert.deepEqual(panel.calls.promptProfiles.at(-1), {
+    summaries: PROMPT_PROFILES.map((profile) => ({ ...profile })),
+    selectedId: 'profile-engineer'
+  });
   assert.equal(panel.calls.errors.at(-1).options.showSettings, true);
 });
 
@@ -364,7 +431,7 @@ test('oversized selection clears the old path and remains the local error after 
     sendMessage: async (message) => {
       messages.push({ ...message });
       if (message.type === 'GET_STATUS') {
-        return { ok: true, enabled: true, configured: true, level: 'child' };
+        return publicStatus();
       }
       return { ok: true, explanation: 'old explanation', requestId: message.requestId };
     },
@@ -404,7 +471,7 @@ test('a changed valid selection invalidates an explanation already in flight', a
     validateSelectedText,
     readSelection: () => selectedText,
     sendMessage: async (message) => message.type === 'GET_STATUS'
-      ? { ok: true, enabled: true, configured: true, level: 'child' }
+      ? publicStatus()
       : pending.promise,
     writeClipboard: async () => {}
   });
@@ -433,7 +500,7 @@ test('a public status refresh invalidates an explanation already in flight', asy
       if (message.type === 'GET_STATUS') {
         statusCalls += 1;
         return statusCalls === 1
-          ? { ok: true, enabled: true, configured: true, level: 'child' }
+          ? publicStatus()
           : pendingStatus.promise;
       }
       return pendingExplanation.promise;
@@ -444,14 +511,17 @@ test('a public status refresh invalidates an explanation already in flight', asy
 
   const explanation = panel.callbacks.onExplain();
   const refresh = controller.refreshStatus();
-  pendingStatus.resolve({ ok: true, enabled: false, configured: true, level: 'engineer' });
+  pendingStatus.resolve(publicStatus({ enabled: false, activePromptProfileId: 'profile-engineer' }));
   await refresh;
   pendingExplanation.resolve({ ok: true, explanation: 'stale explanation', requestId: '1' });
   await explanation;
 
   assert.deepEqual(panel.calls.explanations, []);
   assert.equal(panel.calls.visible.at(-1), false);
-  assert.equal(panel.calls.levels.at(-1), 'engineer');
+  assert.deepEqual(panel.calls.promptProfiles.at(-1), {
+    summaries: PROMPT_PROFILES.map((profile) => ({ ...profile })),
+    selectedId: 'profile-engineer'
+  });
 });
 
 test('a newly captured selection makes a rendered explanation non-copyable', async () => {
@@ -463,7 +533,7 @@ test('a newly captured selection makes a rendered explanation non-copyable', asy
     validateSelectedText,
     readSelection: () => selectedText,
     sendMessage: async (message) => message.type === 'GET_STATUS'
-      ? { ok: true, enabled: true, configured: true, level: 'child' }
+      ? publicStatus()
       : { ok: true, explanation: 'first explanation', requestId: message.requestId },
     writeClipboard: async (text) => { copied.push(text); }
   });
@@ -478,6 +548,42 @@ test('a newly captured selection makes a rendered explanation non-copyable', asy
   assert.equal(panel.calls.announcements.at(-1), 'No explanation to copy.');
 });
 
+test('changing the selected prompt profile invalidates rendered copy state and affects the next request', async () => {
+  const panel = createPanelHarness();
+  const copied = [];
+  const messages = [];
+  const controller = createContentController({
+    createPanel: panel.createPanel,
+    validateSelectedText,
+    readSelection: () => 'selected text',
+    sendMessage: async (message) => {
+      messages.push({ ...message });
+      return message.type === 'GET_STATUS'
+        ? publicStatus()
+        : { ok: true, explanation: 'profile result', requestId: message.requestId };
+    },
+    writeClipboard: async (text) => { copied.push(text); }
+  });
+  await controller.start();
+  await panel.callbacks.onExplain();
+
+  panel.panel.setPromptProfileId('profile-engineer');
+  panel.callbacks.onPromptProfileChange();
+  await panel.callbacks.onCopy();
+  await panel.callbacks.onRetry();
+
+  assert.deepEqual(copied, []);
+  assert.equal(panel.calls.announcements.at(-1), 'No explanation to copy.');
+  assert.equal(panel.calls.selections.at(-1), 'selected text');
+  assert.deepEqual(messages.at(-1), {
+    type: 'EXPLAIN_SELECTION',
+    text: 'selected text',
+    promptProfileId: 'profile-engineer',
+    webSearchEnabled: false,
+    requestId: '2'
+  });
+});
+
 test('configured false-to-true refresh resets the panel to the current ready selection', async () => {
   const panel = createPanelHarness();
   let statusCalls = 0;
@@ -488,8 +594,8 @@ test('configured false-to-true refresh resets the panel to the current ready sel
     sendMessage: async () => {
       statusCalls += 1;
       return statusCalls === 1
-        ? { ok: true, enabled: true, configured: false, level: 'child' }
-        : { ok: true, enabled: true, configured: true, level: 'engineer' };
+        ? publicStatus({ configured: false })
+        : publicStatus({ activePromptProfileId: 'profile-engineer' });
     },
     writeClipboard: async () => {}
   });
@@ -501,7 +607,10 @@ test('configured false-to-true refresh resets the panel to the current ready sel
   assert.ok(panel.calls.selections.length > selectionResetCount);
   assert.equal(panel.calls.selections.at(-1), 'selected text');
   assert.equal(panel.calls.visible.at(-1), true);
-  assert.equal(panel.calls.levels.at(-1), 'engineer');
+  assert.deepEqual(panel.calls.promptProfiles.at(-1), {
+    summaries: PROMPT_PROFILES.map((profile) => ({ ...profile })),
+    selectedId: 'profile-engineer'
+  });
 });
 
 
@@ -514,7 +623,7 @@ test('an oversized selection invalidates an explanation already in flight', asyn
     validateSelectedText,
     readSelection: () => selectedText,
     sendMessage: async (message) => message.type === 'GET_STATUS'
-      ? { ok: true, enabled: true, configured: true, level: 'child' }
+      ? publicStatus()
       : pending.promise,
     writeClipboard: async () => {}
   });
@@ -541,7 +650,7 @@ test('a public status refresh makes a rendered explanation non-copyable', async 
     validateSelectedText,
     readSelection: () => 'selected text',
     sendMessage: async (message) => message.type === 'GET_STATUS'
-      ? { ok: true, enabled: true, configured: true, level: 'child' }
+      ? publicStatus()
       : { ok: true, explanation: 'rendered explanation', requestId: message.requestId },
     writeClipboard: async (text) => { copied.push(text); }
   });
@@ -566,7 +675,7 @@ test('web-search preference initializes the panel and is sent per request', asyn
     sendMessage: async (message) => {
       messages.push(message);
       return message.type === 'GET_STATUS'
-        ? { ok: true, enabled: true, configured: true, level: 'engineer', webSearchEnabled: true }
+        ? publicStatus({ activePromptProfileId: 'profile-engineer', webSearchEnabled: true })
         : { ok: true, explanation: 'Fresh sourced answer', requestId: message.requestId };
     },
     writeClipboard: async () => {}
@@ -578,7 +687,7 @@ test('web-search preference initializes the panel and is sent per request', asyn
   assert.deepEqual(messages.at(-1), {
     type: 'EXPLAIN_SELECTION',
     text: 'current information',
-    level: 'engineer',
+    promptProfileId: 'profile-engineer',
     webSearchEnabled: true,
     requestId: '1'
   });

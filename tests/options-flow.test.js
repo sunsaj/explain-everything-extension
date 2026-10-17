@@ -3,15 +3,27 @@ import assert from "node:assert/strict";
 import { normalizeEndpoint, permissionPatternForEndpoint } from "../shared/api.js";
 import { normalizeSettings, validateSettings } from "../shared/settings.js";
 import { grantAndSaveSettings } from "../options/save-flow.js";
+import * as saveFlow from "../options/save-flow.js";
 
 const candidate = normalizeSettings({
   enabled: true,
   endpoint: "https://proxy.example.com/v1",
   apiKey: "candidate-key",
   model: "candidate-model",
-  level: "engineer",
   webSearchEnabled: true,
-  systemPrompt: "Explain this candidate."
+  promptProfiles: [
+    {
+      id: "profile-simple",
+      title: "Simple",
+      prompt: "Explain this candidate simply."
+    },
+    {
+      id: "profile-engineer",
+      title: "Engineer",
+      prompt: "Explain this candidate precisely."
+    }
+  ],
+  activePromptProfileId: "profile-engineer"
 });
 
 function dependencies(overrides = {}) {
@@ -26,7 +38,10 @@ function dependencies(overrides = {}) {
 }
 
 test("invalid settings stop before permission or worker save", async () => {
-  const invalidCandidate = normalizeSettings({ endpoint: "", apiKey: "" });
+  const invalidCandidate = {
+    ...candidate,
+    promptProfiles: [{ ...candidate.promptProfiles[0], title: "" }]
+  };
   const result = await grantAndSaveSettings(invalidCandidate, dependencies({
     requestPermission() { throw new Error("permission must not run"); },
     saveConfiguration() { throw new Error("save must not run"); }
@@ -34,6 +49,10 @@ test("invalid settings stop before permission or worker save", async () => {
 
   assert.equal(result.ok, false);
   assert.equal(result.validation.valid, false);
+  assert.equal(
+    result.validation.errors["promptProfiles.0.title"],
+    "Enter a profile title."
+  );
 });
 
 test("permission denial performs no worker save", async () => {
@@ -62,7 +81,7 @@ test("permission request starts synchronously before the worker save", async () 
   assert.deepEqual(events, ["permission", "save"]);
 });
 
-test("successful save sends only configuration fields and uses worker-owned enabled state", async () => {
+test("successful save sends the complete atomic profile configuration and uses worker-owned enabled state", async () => {
   let savedConfiguration;
   const result = await grantAndSaveSettings({ ...candidate, extra: "ignored" }, dependencies({
     saveConfiguration: async (configuration) => {
@@ -75,9 +94,9 @@ test("successful save sends only configuration fields and uses worker-owned enab
     endpoint: candidate.endpoint,
     apiKey: candidate.apiKey,
     model: candidate.model,
-    level: candidate.level,
     webSearchEnabled: candidate.webSearchEnabled,
-    systemPrompt: candidate.systemPrompt
+    promptProfiles: candidate.promptProfiles,
+    activePromptProfileId: candidate.activePromptProfileId
   });
   assert.deepEqual(result, { ok: true, settings: { ...candidate, enabled: false } });
 });
@@ -92,4 +111,14 @@ test("worker save failures reject without claiming settings were saved", async (
     })),
     /Could not save settings/
   );
+});
+
+test("configuration controls stay locked until a trusted configuration load succeeds", () => {
+  assert.equal(typeof saveFlow.configurationControlsLocked, "function");
+  const controlsLocked = saveFlow.configurationControlsLocked;
+
+  assert.equal(controlsLocked({ loading: true, busy: false, configurationLoaded: false }), true);
+  assert.equal(controlsLocked({ loading: false, busy: true, configurationLoaded: true }), true);
+  assert.equal(controlsLocked({ loading: false, busy: false, configurationLoaded: false }), true);
+  assert.equal(controlsLocked({ loading: false, busy: false, configurationLoaded: true }), false);
 });

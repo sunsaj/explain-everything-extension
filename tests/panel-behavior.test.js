@@ -51,7 +51,7 @@ test("owned host lifecycle never deletes colliding page content and protects cri
       display: "block",
       "z-index": "2147483647",
       "pointer-events": "none",
-      "font-family": "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+      "font-family": "Selection Inter, Segoe UI Variable Text, SF Pro Text, -apple-system, BlinkMacSystemFont, Segoe UI, system-ui, sans-serif",
       "font-size": "16px",
       "line-height": "1.5",
       color: "CanvasText",
@@ -126,6 +126,7 @@ test("panel controls call only their exact callbacks and launcher includes a dec
     retry: 0,
     copy: 0,
     settings: 0,
+    profile: 0,
     close: 0
   };
 
@@ -136,6 +137,7 @@ test("panel controls call only their exact callbacks and launcher includes a dec
       onRetry: () => { calls.retry += 1; },
       onCopy: () => { calls.copy += 1; },
       onSettings: () => { calls.settings += 1; },
+      onPromptProfileChange: () => { calls.profile += 1; },
       onClose: () => { calls.close += 1; }
     });
     const host = ownedHost(environment.document);
@@ -147,6 +149,8 @@ test("panel controls call only their exact callbacks and launcher includes a dec
     assert.equal(spark.textContent, "✦");
     assert.equal(spark.getAttribute("aria-hidden"), "true");
 
+    controller.setPromptProfiles([{ id: "simple", title: "Simple" }], "simple");
+    byLabel(shadow, "Prompt profile").dispatchEvent(new FakeEvent("change"));
     launcher.click();
     trustedClick(byLabel(shadow, "Explain"));
     controller.setExplanation("Ready");
@@ -160,6 +164,7 @@ test("panel controls call only their exact callbacks and launcher includes a dec
       retry: 1,
       copy: 1,
       settings: 1,
+      profile: 1,
       close: 1
     });
     controller.destroy();
@@ -168,23 +173,73 @@ test("panel controls call only their exact callbacks and launcher includes a dec
   }
 });
 
-test("controller round-trips visibility and level while rendering selection and output as text", async () => {
+test("controller renders ordered safe prompt profiles with stable selection fallbacks", async () => {
   const environment = installFakeDom();
 
   try {
     const { createExplainerPanel } = await importPanelModule();
-    const controller = createExplainerPanel({ initialLevel: "engineer" });
+    const controller = createExplainerPanel({});
     const host = ownedHost(environment.document);
     const shadow = getFakeShadowRoot(host);
     const selectionPreview = shadow.querySelector(".selection-preview");
     const response = shadow.querySelector(".response");
+    const profileSelect = byLabel(shadow, "Prompt profile");
     const webSearch = byLabel(shadow, "Use internet search");
 
-    assert.equal(controller.getLevel(), "engineer");
-    controller.setLevel("child");
-    assert.equal(controller.getLevel(), "child");
-    controller.setLevel("unsupported");
-    assert.equal(controller.getLevel(), "child");
+    controller.setPromptProfiles([
+      { id: "simple", title: "Simple <b>safe</b>" },
+      { id: "deep", title: "Deep technical" }
+    ], "deep");
+    assert.deepEqual(profileSelect.children.map((option) => option.value), ["simple", "deep"]);
+    assert.deepEqual(profileSelect.children.map((option) => option.textContent), [
+      "Simple <b>safe</b>",
+      "Deep technical"
+    ]);
+    assert.equal(profileSelect.querySelector("b"), null);
+    assert.equal(controller.getPromptProfileId(), "deep");
+
+    controller.setPromptProfileId("simple");
+    assert.equal(controller.getPromptProfileId(), "simple");
+    controller.setPromptProfileId("unsupported");
+    assert.equal(controller.getPromptProfileId(), "simple");
+
+    controller.setPromptProfiles([
+      { id: "simple", title: "Simple renamed" },
+      { id: "deep", title: "Deep technical" }
+    ], "deep");
+    assert.equal(controller.getPromptProfileId(), "simple", "refresh preserves a still-valid selection");
+
+    controller.setPromptProfiles([
+      { id: "deep", title: "Deep technical" },
+      { id: "audit", title: "Audit" }
+    ], "deep");
+    assert.equal(controller.getPromptProfileId(), "deep", "removed selection falls back to the active ID");
+
+    controller.setPromptProfiles([
+      { id: "audit", title: "Audit" },
+      { id: "brief", title: "Brief" }
+    ], "missing");
+    assert.equal(controller.getPromptProfileId(), "audit", "missing active ID falls back to the first profile");
+
+    controller.setPromptProfiles([
+      { id: "unsafe", title: "Unsafe", prompt: "private prompt text" }
+    ], "unsafe");
+    assert.deepEqual(profileSelect.children.map((option) => option.value), ["audit", "brief"]);
+    assert.equal(profileSelect.textContent.includes("private prompt text"), false);
+    assert.equal(controller.getPromptProfileId(), "audit");
+
+    controller.setPromptProfiles([{ id: "bad", title: "Bad\u0000Title" }], "bad");
+    controller.setPromptProfiles([
+      { id: "street-one", title: "Straße" },
+      { id: "street-two", title: "STRASSE" }
+    ], "street-one");
+    controller.setPromptProfiles([
+      { id: "ve-one", title: "\u0432" },
+      { id: "ve-two", title: "\u1C80" }
+    ], "ve-one");
+    assert.deepEqual(profileSelect.children.map((option) => option.value), ["audit", "brief"]);
+    assert.equal(controller.getPromptProfileId(), "audit");
+
     assert.equal(controller.getWebSearchEnabled(), false);
     controller.setWebSearchEnabled(true);
     assert.equal(controller.getWebSearchEnabled(), true);
@@ -232,8 +287,10 @@ test("loading success and error methods update busy state actions and focus with
     const retry = byLabel(shadow, "Retry");
     const copy = byLabel(shadow, "Copy");
     const settings = byLabel(shadow, "Settings");
+    const profileSelect = byLabel(shadow, "Prompt profile");
     const webSearch = byLabel(shadow, "Use internet search");
 
+    controller.setPromptProfiles([{ id: "simple", title: "Simple" }], "simple");
     controller.setSelection("Keep this selection");
     controller.setWebSearchEnabled(true);
     controller.setLoading({ webSearchEnabled: true });
@@ -242,6 +299,7 @@ test("loading success and error methods update busy state actions and focus with
     assert.equal(explain.disabled, true);
     assert.equal(retry.disabled, true);
     assert.equal(status.textContent, "Searching the web and explaining…");
+    assert.equal(profileSelect.disabled, true);
     assert.equal(webSearch.disabled, true);
     assert.equal(response.hidden, true);
     assert.equal(actions.hidden, true);
@@ -251,6 +309,7 @@ test("loading success and error methods update busy state actions and focus with
     assert.equal(dialog.getAttribute("aria-busy"), "false");
     assert.equal(explain.disabled, false);
     assert.equal(retry.disabled, false);
+    assert.equal(profileSelect.disabled, false);
     assert.equal(webSearch.disabled, false);
     assert.equal(response.hidden, false);
     assert.equal(response.querySelector("h2").textContent, "Result");
@@ -346,7 +405,7 @@ test("setSelection clears stale result and error UI back to an idle state", asyn
     const explain = byLabel(shadow, 'Explain');
     const retry = byLabel(shadow, 'Retry');
     const settings = byLabel(shadow, 'Settings');
-    const level = byLabel(shadow, 'Explanation level');
+    const profileSelect = byLabel(shadow, 'Prompt profile');
 
     controller.setSelection('old selection');
     controller.setError('Configure access.', { showSettings: true });
@@ -362,7 +421,7 @@ test("setSelection clears stale result and error UI back to an idle state", asyn
     assert.equal(settings.hidden, true);
     assert.equal(explain.disabled, false);
     assert.equal(retry.disabled, false);
-    assert.equal(level.disabled, false);
+    assert.equal(profileSelect.disabled, false);
 
     controller.setExplanation('stale result');
     controller.setSelection('');
@@ -373,6 +432,30 @@ test("setSelection clears stale result and error UI back to an idle state", asyn
     assert.equal(response.textContent, '');
     assert.equal(response.hidden, true);
     assert.equal(actions.hidden, true);
+    controller.destroy();
+  } finally {
+    environment.restore();
+  }
+});
+
+
+test("panel changes from compact states to the expanded result workspace", async () => {
+  const environment = installFakeDom();
+  try {
+    const { createExplainerPanel } = await importPanelModule();
+    const controller = createExplainerPanel({});
+    const shadow = getFakeShadowRoot(ownedHost(environment.document));
+    const panel = shadow.querySelector(".panel");
+
+    assert.equal(panel.dataset.view, "idle");
+    controller.setLoading();
+    assert.equal(panel.dataset.view, "loading");
+    controller.setExplanation("## Ready\n\nExpanded answer");
+    assert.equal(panel.dataset.view, "result");
+    controller.setError("Try again.");
+    assert.equal(panel.dataset.view, "error");
+    controller.setSelection("Another selection");
+    assert.equal(panel.dataset.view, "idle");
     controller.destroy();
   } finally {
     environment.restore();

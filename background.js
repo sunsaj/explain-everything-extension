@@ -81,9 +81,9 @@ function createDependencies(onPermissionDenied) {
         )
       }
     ),
-    explain: async (settings, text, level, webSearchEnabled = false) => {
+    explain: async (settings, text, prompt, webSearchEnabled = false) => {
       await requireEndpointPermission(settings.endpoint, onPermissionDenied);
-      return requestExplanation(settings, text, level, { webSearchEnabled });
+      return requestExplanation(settings, text, prompt, { webSearchEnabled });
     },
     openOptions: () => chrome.runtime.openOptionsPage(),
     isTrustedOptionsSender

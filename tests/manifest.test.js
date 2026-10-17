@@ -11,7 +11,7 @@ test("manifest wires Manifest V3, future UI paths, and packaged icons", async ()
 
   assert.equal(manifest.manifest_version, 3);
   assert.ok(Number(manifest.minimum_chrome_version) >= 102);
-  assert.deepEqual(manifest.permissions, ["storage"]);
+  assert.deepEqual(manifest.permissions, ["storage", "unlimitedStorage"]);
   assert.deepEqual(manifest.optional_host_permissions, ["https://*/*", "http://*/*"]);
   assert.deepEqual(manifest.background, {
     service_worker: "background.js",
@@ -38,9 +38,11 @@ test("manifest wires Manifest V3, future UI paths, and packaged icons", async ()
     resources: [
       "content/app.js",
       "content/app-controller.js",
+      "assets/fonts/InterVariable.woff2",
       "content/markdown.js",
       "content/panel.js",
       "content/panel.css",
+      "shared/profile-titles.js",
       "shared/selection.js"
     ],
     matches: ["https://*/*", "http://*/*"]
@@ -52,6 +54,8 @@ test("background statically wires shared adapters, listeners, and exact permissi
 
   assert.match(source, /permissionPatternForEndpoint/);
   assert.match(source, /requestExplanation/);
+  assert.match(source, /explain:\s*async\s*\(\s*settings,\s*text,\s*prompt,\s*webSearchEnabled/);
+  assert.match(source, /requestExplanation\(settings,\s*text,\s*prompt/);
   assert.match(source, /createMessageHandler/);
   assert.match(source, /loadSettings/);
   assert.match(source, /saveSettings/);
@@ -173,7 +177,7 @@ test("background initializes trusted storage, sanitizes broadcasts, and cleans o
     assert.deepEqual(storageEvents, [["access", { accessLevel: "TRUSTED_CONTEXTS" }]]);
 
     const pendingPermissionResponse = send({
-      type: "EXPLAIN_SELECTION", text: "Selected text", level: "child", requestId: "permission-request"
+      type: "EXPLAIN_SELECTION", text: "Selected text", promptProfileId: "profile-child", requestId: "permission-request"
     });
     await Promise.resolve();
     assert.deepEqual(storageEvents, [["access", { accessLevel: "TRUSTED_CONTEXTS" }]]);
@@ -189,15 +193,34 @@ test("background initializes trusted storage, sanitizes broadcasts, and cleans o
     });
 
     const changedSettings = {
-      ...getDefaultSettings(), enabled: false, endpoint: "https://proxy.example.com/v1",
-      apiKey: "broadcast-secret", model: "private-model", level: "engineer", webSearchEnabled: true, systemPrompt: "private prompt"
+      ...getDefaultSettings(),
+      enabled: false,
+      endpoint: "https://proxy.example.com/v1",
+      apiKey: "broadcast-secret",
+      model: "private-model",
+      webSearchEnabled: true,
+      promptProfiles: [
+        { id: "profile-private", title: "Private", prompt: "private prompt" },
+        { id: "profile-second", title: "Second", prompt: "second private prompt" }
+      ],
+      activePromptProfileId: "profile-second"
     };
     await storageChangedListener({
       selectionExplainerSettings: { newValue: changedSettings }
     }, "local");
     assert.deepEqual(sentMessages, [4, 9].map((tabId) => ({
       tabId,
-      message: { type: "PUBLIC_STATUS_CHANGED", enabled: false, configured: true, level: "engineer", webSearchEnabled: true }
+      message: {
+        type: "PUBLIC_STATUS_CHANGED",
+        enabled: false,
+        configured: true,
+        webSearchEnabled: true,
+        activePromptProfileId: "profile-second",
+        promptProfiles: [
+          { id: "profile-private", title: "Private" },
+          { id: "profile-second", title: "Second" }
+        ]
+      }
     })));
     assert.equal(JSON.stringify(sentMessages).includes("broadcast-secret"), false);
     assert.equal(JSON.stringify(sentMessages).includes("private-model"), false);
@@ -207,21 +230,31 @@ test("background initializes trusted storage, sanitizes broadcasts, and cleans o
     const saveResponse = await send({
       type: "SAVE_CONFIGURATION",
       configuration: {
-        endpoint: "https://new.example.com/v1", apiKey: "new-key", model: "new-model",
-        level: "child", webSearchEnabled: true, systemPrompt: "New prompt"
+        endpoint: "https://new.example.com/v1",
+        apiKey: "new-key",
+        model: "new-model",
+        webSearchEnabled: true,
+        promptProfiles: [{ id: "profile-new", title: "New", prompt: "New private prompt" }],
+        activePromptProfileId: "profile-new"
       }
     }, { id: "test-extension-id", url: "chrome-extension://test/options/options.html" });
     assert.deepEqual(saveResponse, { ok: true, enabled: false });
+    assert.equal(JSON.stringify(saveResponse).includes("New private prompt"), false);
     assert.equal(stored.selectionExplainerSettings.enabled, false);
     assert.equal(stored.selectionExplainerSettings.endpoint, "https://new.example.com/v1");
+    assert.equal(stored.selectionExplainerSettings.activePromptProfileId, "profile-new");
     assert.deepEqual(removedPermissions, [{ origins: ["https://proxy.example.com/*"] }]);
 
     failNextSet = true;
     const failedSave = await send({
       type: "SAVE_CONFIGURATION",
       configuration: {
-        endpoint: "https://failed.example.com/v1", apiKey: "failed-key", model: "failed-model",
-        level: "child", webSearchEnabled: false, systemPrompt: "Failed prompt"
+        endpoint: "https://failed.example.com/v1",
+        apiKey: "failed-key",
+        model: "failed-model",
+        webSearchEnabled: false,
+        promptProfiles: [{ id: "profile-failed", title: "Failed", prompt: "Failed private prompt" }],
+        activePromptProfileId: "profile-failed"
       }
     }, { id: "test-extension-id", url: "chrome-extension://test/options/options.html" });
     assert.equal(failedSave.ok, false);

@@ -150,8 +150,9 @@ test("panel exposes the accessible hardened Shadow DOM controller contract", asy
   for (const method of [
     "setVisible",
     "setSelection",
-    "setLevel",
-    "getLevel",
+    "setPromptProfiles",
+    "setPromptProfileId",
+    "getPromptProfileId",
     "setLoading",
     "setExplanation",
     "setError",
@@ -170,6 +171,11 @@ test("panel exposes the accessible hardened Shadow DOM controller contract", asy
   assert.match(script, /chrome\.runtime\.getURL\s*\(\s*["']content\/panel\.css["']\s*\)/);
   assert.match(script, /setAttribute\s*\(\s*["']role["']\s*,\s*["']dialog["']\s*\)/);
   assert.match(script, /setAttribute\s*\(\s*["']aria-live["']\s*,\s*["']polite["']\s*\)/);
+  assert.match(script, /Prompt profile/);
+  assert.doesNotMatch(script, /Explanation level/);
+  assert.doesNotMatch(script, /\b(?:setLevel|getLevel)\b/);
+  assert.match(script, /createElement\s*\(\s*["']option["']\s*\)/);
+  assert.match(script, /option\.textContent\s*=/);
   assert.match(script, /Use internet search/);
   assert.match(script, /getWebSearchEnabled/);
   assert.match(script, /setWebSearchEnabled/);
@@ -233,9 +239,13 @@ test("panel exposes the accessible hardened Shadow DOM controller contract", asy
 
   assert.match(ruleBlock(css, ".panel__header", /flex\s*:\s*0\s+0\s+auto/i), /flex\s*:\s*0\s+0\s+auto/i);
   assert.match(ruleBlock(css, ".panel__footer", /flex\s*:\s*0\s+0\s+auto/i), /flex\s*:\s*0\s+0\s+auto/i);
+  const compactHeightBlock = mediaBlocks(css).find(
+    ({ condition }) => /^\(max-height:\s*560px\)$/i.test(condition)
+  );
+  assert.ok(compactHeightBlock, "missing compact-height media query");
   assert.doesNotMatch(
-    css,
-    /@media\s*\(max-height:\s*560px\)[\s\S]*?\.panel\s*\{[^}]*max-height\s*:/i
+    compactHeightBlock.body,
+    /\.panel\s*\{[^}]*max-height\s*:/i
   );
   assert.match(
     css,
@@ -276,5 +286,21 @@ test("panel exposes the accessible hardened Shadow DOM controller contract", asy
   assert.match(css, /option\s*\{[^}]*background\s*:\s*var\(--se-surface\)[^}]*color\s*:\s*var\(--se-text\)/i);
   assert.match(css, /button:disabled\s*,\s*select:disabled\s*\{[^}]*opacity\s*:\s*0\.[6-9]/i);
   assert.doesNotMatch(css, /@import/i);
+  assert.match(css, /@font-face[\s\S]*?font-family\s*:\s*["']Selection Inter["'][\s\S]*?InterVariable\.woff2/i);
+  assert.match(css, /font-family\s*:\s*["']Selection Inter["']/i);
+  assert.match(css, /\.markdown-content\s*\{[^}]*font-weight\s*:\s*400/i);
+  assert.match(script, /Segoe UI Variable Text/);
+  assert.match(css, /text-rendering\s*:\s*optimizeLegibility/i);
+  assert.match(css, /backdrop-filter\s*:\s*blur\(/i);
+  assert.match(css, /\.panel\[data-view=["']result["']\]\s*\{[^}]*width\s*:\s*min\(680px/i);
+  assert.match(css, /\.panel\[data-view=["']result["']\]\s+\.panel__body\s*\{[^}]*grid-template-columns\s*:\s*(?:180|190|200)px\s+minmax\(0,\s*1fr\)/i);
+  assert.match(css, /@media\s*\(max-width:\s*720px\)[\s\S]*?\.panel\[data-view=["']result["']\]/i);
+  assert.match(css, /\.panel\[data-view=["']result["']\]\s+\.field\s*\{[^}]*grid-template-columns\s*:\s*minmax\(0,\s*1fr\)/i);
+  assert.match(css, /\.panel\[data-view=["']result["']\]\s+\.panel__body\s*\{[^}]*grid-template-rows\s*:\s*auto\s+auto\s+auto\s+1fr/i);
+  assert.match(css, /\.panel\[data-view=["']result["']\]\s+\.web-search-text\s*>\s*span\s*\{[^}]*display\s*:\s*none/i);
+  assert.match(css, /\.web-search-checkbox\s*\{[^}]*appearance\s*:\s*none[^}]*width\s*:\s*42px[^}]*height\s*:\s*24px/i);
+  assert.match(css, /\.web-search-checkbox::before\s*\{[^}]*border-radius\s*:\s*50%/i);
+  assert.match(css, /\.response:focus-visible\s*\{[^}]*outline\s*:\s*2px\s+solid\s+var\(--se-accent\)/i);
+  assert.match(css, /\.panel\[data-view=["']result["']\]\s*>\s*\.panel__footer::before\s*\{[^}]*content\s*:\s*["']Markdown and citations rendered safely["']/i);
   assert.doesNotMatch(css, /https?:\/\//i);
 });

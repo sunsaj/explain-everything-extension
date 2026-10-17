@@ -1,11 +1,23 @@
+export function configurationControlsLocked({
+  loading,
+  busy,
+  configurationLoaded
+}) {
+  return loading || busy || !configurationLoaded;
+}
+
+function cloneProfiles(profiles) {
+  return profiles.map(({ id, title, prompt }) => ({ id, title, prompt }));
+}
+
 function configurationFields(candidate) {
   return {
     endpoint: candidate.endpoint,
     apiKey: candidate.apiKey,
     model: candidate.model,
-    level: candidate.level,
     webSearchEnabled: candidate.webSearchEnabled,
-    systemPrompt: candidate.systemPrompt
+    promptProfiles: cloneProfiles(candidate.promptProfiles),
+    activePromptProfileId: candidate.activePromptProfileId
   };
 }
 

@@ -14,6 +14,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createProductHashInventory } from "./helpers/product-attestation.js";
+import { verifyRuntimeReferencePolicy } from "./helpers/runtime-reference-policy.js";
 import {
   verifyPackageHygiene,
   verifyRequestArchitecture,
@@ -30,17 +32,47 @@ const TOP_LEVEL_VERIFIERS = [
 ];
 const FORBIDDEN_RUNTIME_PATH = /forbidden runtime reference.*tests\//i;
 
+async function copyPackageForMutation(sourceRoot, packageRoot) {
+  await cp(sourceRoot, packageRoot, { recursive: true });
+  await rm(join(packageRoot, ".git"), { recursive: true, force: true });
+}
+
 async function withPackageCopy(run) {
   const tempRoot = await mkdtemp(join(tmpdir(), "selection-explainer-mutation-"));
   const packageRoot = join(tempRoot, "chrome-extension");
   try {
-    await cp(extensionRoot, packageRoot, { recursive: true });
-    await rm(join(packageRoot, "I'"), { force: true });
+    await copyPackageForMutation(extensionRoot, packageRoot);
     await run(packageRoot, tempRoot);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
 }
+
+test("mutation package copying preserves unrelated files and excludes only .git", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "selection-explainer-copy-contract-"));
+  const sourceRoot = join(tempRoot, "source");
+  const packageRoot = join(tempRoot, "copy");
+  try {
+    await mkdir(join(sourceRoot, ".git"), { recursive: true });
+    await writeFile(join(sourceRoot, ".git", "config"), "metadata", "utf8");
+    await writeFile(join(sourceRoot, "I'"), "preserve exact file", "utf8");
+    await writeFile(join(sourceRoot, "ordinary.txt"), "preserve ordinary file", "utf8");
+
+    await copyPackageForMutation(sourceRoot, packageRoot);
+
+    assert.equal(await readFile(join(packageRoot, "I'"), "utf8"), "preserve exact file");
+    assert.equal(
+      await readFile(join(packageRoot, "ordinary.txt"), "utf8"),
+      "preserve ordinary file"
+    );
+    await assert.rejects(
+      () => readFile(join(packageRoot, ".git", "config"), "utf8"),
+      (error) => error?.code === "ENOENT"
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
 
 async function mutateText(packageRoot, packagePath, addition) {
   await appendFile(join(packageRoot, ...packagePath.split("/")), addition, "utf8");
@@ -673,7 +705,7 @@ test("hash updater and every copied top-level verifier reject a service worker u
     }
 
     const inventory = await approveProductFileHash(packageRoot, "manifest.json");
-    assert.equal(inventory.files.length, 28);
+    assert.equal(inventory.files.length, 33);
     assert.ok(!inventory.files.some((entry) => entry.path.startsWith("tests/")));
     await assertEveryTopLevelVerifierRejects(packageRoot);
 
@@ -721,7 +753,7 @@ test("hash updater and every copied verifier reject a transitive nested product 
       "shared/runtime-nested-a.js",
       "shared/runtime-nested-b.js"
     ]);
-    assert.equal(inventory.files.length, 30);
+    assert.equal(inventory.files.length, 35);
     assert.ok(!inventory.files.some((entry) => entry.path.startsWith("tests/")));
     await assertEveryTopLevelVerifierRejects(packageRoot);
 
@@ -731,5 +763,52 @@ test("hash updater and every copied verifier reject a transitive nested product 
       "utf8"
     );
     await assertEveryTopLevelVerifierRejects(packageRoot);
+  });
+});
+
+test("VCS-only .gitattributes is excluded from product inventory and package hygiene", async () => {
+  await withPackageCopy(async (packageRoot) => {
+    await writeFile(
+      join(packageRoot, ".gitattributes"),
+      "*.js text eol=lf\n*.png binary\n",
+      "utf8"
+    );
+
+    const writeResult = runHashUpdater(packageRoot, "--write");
+    assertUpdaterSucceeds(writeResult, "--write");
+    const inventory = await createProductHashInventory(packageRoot);
+    assert.equal(
+      inventory.files.some(({ path }) => path === ".gitattributes"),
+      false
+    );
+    const copiedVerifier = await loadCopiedVerifierModule(packageRoot, "gitattributes-hygiene");
+    await assert.doesNotReject(() => copiedVerifier.verifyPackageHygiene(packageRoot));
+  });
+});
+
+test("runtime reference policy rejects manifest and source references into .gitattributes", async () => {
+  await withPackageCopy(async (packageRoot) => {
+    await writeFile(join(packageRoot, ".gitattributes"), "*.js text eol=lf\n", "utf8");
+
+    await mutateManifest(packageRoot, (manifest) => {
+      manifest.options_page = ".gitattributes";
+    });
+    await assert.rejects(
+      () => verifyRuntimeReferencePolicy(packageRoot),
+      /forbidden runtime reference.*[.]gitattributes/i
+    );
+
+    await mutateManifest(packageRoot, (manifest) => {
+      manifest.options_page = "options/options.html";
+    });
+    await appendFile(
+      join(packageRoot, "content", "app.js"),
+      "\nimport '../.gitattributes';\n",
+      "utf8"
+    );
+    await assert.rejects(
+      () => verifyRuntimeReferencePolicy(packageRoot),
+      /forbidden runtime reference.*[.]gitattributes/i
+    );
   });
 });

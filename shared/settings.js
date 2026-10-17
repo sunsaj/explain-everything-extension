@@ -1,9 +1,76 @@
 import {
+  DEFAULT_ACTIVE_PROMPT_PROFILE_ID,
+  DEFAULT_PROMPT_PROFILES,
   DEFAULT_SYSTEM_PROMPT,
   SETTINGS_STORAGE_KEY,
   SETTINGS_VERSION,
   getDefaultSettings
 } from "./defaults.js";
+import {
+  normalizePromptProfiles,
+  promptProfileSummaries,
+  validatePromptProfiles
+} from "./profiles.js";
+
+function settingsObject(raw) {
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+}
+
+function usesPromptProfileSchema(raw) {
+  if (raw.settingsVersion === 1 || raw.settingsVersion === 2) return false;
+  return raw.settingsVersion >= SETTINGS_VERSION
+    || Object.hasOwn(raw, "promptProfiles")
+    || Object.hasOwn(raw, "activePromptProfileId");
+}
+
+function combineMigratedPrompt(basePrompt, audienceInstructions) {
+  return basePrompt + "\n\n" + audienceInstructions;
+}
+
+function migratedPromptProfiles(raw) {
+  const basePrompt = typeof raw.systemPrompt === "string" && raw.systemPrompt.trim()
+    ? raw.systemPrompt
+    : DEFAULT_SYSTEM_PROMPT;
+
+  return DEFAULT_PROMPT_PROFILES.map(({ id, title, prompt }) => {
+    const audienceInstructions = prompt.startsWith(DEFAULT_SYSTEM_PROMPT)
+      ? prompt.slice(DEFAULT_SYSTEM_PROMPT.length).trim()
+      : prompt;
+    return {
+      id,
+      title,
+      prompt: combineMigratedPrompt(basePrompt, audienceInstructions)
+    };
+  });
+}
+
+function normalizedProfileSettings(raw) {
+  if (!usesPromptProfileSchema(raw)) {
+    return {
+      promptProfiles: migratedPromptProfiles(raw),
+      activePromptProfileId: raw.level === "engineer"
+        ? "profile-engineer"
+        : DEFAULT_ACTIVE_PROMPT_PROFILE_ID
+    };
+  }
+
+  const validation = validatePromptProfiles(
+    raw.promptProfiles,
+    raw.activePromptProfileId
+  );
+  if (!validation.valid) {
+    const defaults = getDefaultSettings();
+    return {
+      promptProfiles: defaults.promptProfiles,
+      activePromptProfileId: defaults.activePromptProfileId
+    };
+  }
+
+  return {
+    promptProfiles: normalizePromptProfiles(raw.promptProfiles),
+    activePromptProfileId: raw.activePromptProfileId
+  };
+}
 
 export function isLoopbackHostname(hostname) {
   return ["localhost", "127.0.0.1", "[::1]", "::1"].includes(
@@ -12,27 +79,28 @@ export function isLoopbackHostname(hostname) {
 }
 
 export function normalizeSettings(raw = {}) {
+  const source = settingsObject(raw);
   const defaults = getDefaultSettings();
+  const profiles = normalizedProfileSettings(source);
   return {
-    enabled: typeof raw.enabled === "boolean" ? raw.enabled : defaults.enabled,
-    endpoint: typeof raw.endpoint === "string" ? raw.endpoint.trim() : "",
-    apiKey: typeof raw.apiKey === "string" ? raw.apiKey.trim() : "",
-    model: typeof raw.model === "string" && raw.model.trim()
-      ? raw.model.trim()
+    enabled: typeof source.enabled === "boolean" ? source.enabled : defaults.enabled,
+    endpoint: typeof source.endpoint === "string" ? source.endpoint.trim() : "",
+    apiKey: typeof source.apiKey === "string" ? source.apiKey.trim() : "",
+    model: typeof source.model === "string" && source.model.trim()
+      ? source.model.trim()
       : defaults.model,
-    level: raw.level === "engineer" ? "engineer" : "child",
-    webSearchEnabled: typeof raw.webSearchEnabled === "boolean"
-      ? raw.webSearchEnabled
+    webSearchEnabled: typeof source.webSearchEnabled === "boolean"
+      ? source.webSearchEnabled
       : defaults.webSearchEnabled,
-    systemPrompt: typeof raw.systemPrompt === "string" && raw.systemPrompt.trim()
-      ? raw.systemPrompt.trim()
-      : DEFAULT_SYSTEM_PROMPT,
+    promptProfiles: profiles.promptProfiles,
+    activePromptProfileId: profiles.activePromptProfileId,
     settingsVersion: SETTINGS_VERSION
   };
 }
 
 export function validateSettings(settings) {
-  const value = normalizeSettings(settings);
+  const source = settingsObject(settings);
+  const value = normalizeSettings(source);
   const errors = {};
   if (!value.endpoint) errors.endpoint = "Enter the LiteLLM URL.";
   if (!value.apiKey) errors.apiKey = "Enter an API key.";
@@ -49,6 +117,17 @@ export function validateSettings(settings) {
       errors.endpoint = "Enter a valid URL.";
     }
   }
+
+  if (usesPromptProfileSchema(source)) {
+    Object.assign(
+      errors,
+      validatePromptProfiles(
+        source.promptProfiles,
+        source.activePromptProfileId
+      ).errors
+    );
+  }
+
   return { valid: Object.keys(errors).length === 0, errors };
 }
 
@@ -67,14 +146,14 @@ export async function saveSettings(storageArea, settings) {
   return normalized;
 }
 
-
 export function getPublicStatus(settings) {
   const normalized = normalizeSettings(settings);
   return {
     enabled: normalized.enabled,
     configured: isConfigurationReady(normalized),
-    level: normalized.level,
-    webSearchEnabled: normalized.webSearchEnabled
+    webSearchEnabled: normalized.webSearchEnabled,
+    activePromptProfileId: normalized.activePromptProfileId,
+    promptProfiles: promptProfileSummaries(normalized.promptProfiles)
   };
 }
 

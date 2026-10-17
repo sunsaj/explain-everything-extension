@@ -9,6 +9,8 @@ import {
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { verifyRuntimeReferencePolicy } from "./runtime-reference-policy.js";
 
+const PRODUCT_EXCLUDED_ROOT_ENTRIES = new Set(["tests", ".git", ".gitattributes"]);
+
 export const APPROVED_PRODUCT_HASHES_URL = new URL(
   "./approved-product-hashes.json",
   import.meta.url
@@ -66,7 +68,7 @@ async function collectProductFiles(directory, extensionRoot, realRoot, files) {
   entries.sort((left, right) => compareNames(left.name, right.name));
 
   for (const entry of entries) {
-    if (directory === extensionRoot && entry.name === "tests") continue;
+    if (directory === extensionRoot && PRODUCT_EXCLUDED_ROOT_ENTRIES.has(entry.name.toLowerCase())) continue;
     const entryPath = resolve(directory, entry.name);
     const productPath = slashPath(extensionRoot, entryPath);
 
@@ -118,8 +120,10 @@ function validateInventory(inventory, extensionRoot) {
       `product attestation inventory has invalid SHA-256 for ${entry.path}`
     );
     assert.ok(
-      !entry.path.startsWith("tests/"),
-      `product attestation inventory must exclude tests: ${entry.path}`
+      !entry.path.startsWith("tests/")
+        && !entry.path.startsWith(".git/")
+        && entry.path !== ".gitattributes",
+      `product attestation inventory must exclude verifier or VCS metadata: ${entry.path}`
     );
     assert.ok(
       !seen.has(entry.path),

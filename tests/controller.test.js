@@ -8,10 +8,13 @@ const configuredSettings = {
   endpoint: "https://proxy.example.com",
   apiKey: "secret-key",
   model: "engineering-model",
-  level: "child",
-  systemPrompt: "Explain clearly.",
   webSearchEnabled: false,
-  settingsVersion: 2
+  promptProfiles: [
+    { id: "profile-concise", title: "Concise", prompt: "Use concise bullets." },
+    { id: "profile-deep", title: "Deep dive", prompt: "Use mechanisms, tradeoffs, and edge cases." }
+  ],
+  activePromptProfileId: "profile-concise",
+  settingsVersion: 3
 };
 
 const genericFailure = {
@@ -34,13 +37,25 @@ function createDependencies(overrides = {}) {
   };
 }
 
-test("GET_STATUS reports readiness without returning the API key", async () => {
+test("GET_STATUS returns ordered profile summaries without private prompts or credentials", async () => {
   const handler = createMessageHandler(createDependencies());
 
   const response = await handler({ type: "GET_STATUS" }, {});
 
-  assert.deepEqual(response, { ok: true, enabled: true, configured: true, level: 'child', webSearchEnabled: false });
+  assert.deepEqual(response, {
+    ok: true,
+    enabled: true,
+    configured: true,
+    webSearchEnabled: false,
+    activePromptProfileId: "profile-concise",
+    promptProfiles: [
+      { id: "profile-concise", title: "Concise" },
+      { id: "profile-deep", title: "Deep dive" }
+    ]
+  });
   assert.equal(JSON.stringify(response).includes("secret-key"), false);
+  assert.equal(JSON.stringify(response).includes("Use concise bullets."), false);
+  assert.equal(JSON.stringify(response).includes("Use mechanisms"), false);
 });
 
 test("GET_STATUS sanitizes arbitrary dependency errors", async () => {
@@ -103,19 +118,28 @@ test("SET_ENABLED rejects non-boolean values without saving", async () => {
   assert.equal(saveCalls, 0);
 });
 
-test("EXPLAIN_SELECTION validates, normalizes, and forwards a string request ID", async () => {
+test("EXPLAIN_SELECTION resolves the requested profile from the latest saved settings", async () => {
+  let latestSettings = configuredSettings;
   let captured;
   const handler = createMessageHandler(createDependencies({
-    explain: async (settings, text, level, webSearchEnabled) => {
-      captured = { settings, text, level, webSearchEnabled };
+    loadSettings: async () => latestSettings,
+    explain: async (settings, text, prompt, webSearchEnabled) => {
+      captured = { settings, text, prompt, webSearchEnabled };
       return "Detailed explanation";
     }
   }));
+  latestSettings = {
+    ...configuredSettings,
+    promptProfiles: configuredSettings.promptProfiles.map((profile) => profile.id === "profile-deep"
+      ? { ...profile, prompt: "LATEST saved private prompt." }
+      : profile)
+  };
 
   const response = await handler({
     type: "EXPLAIN_SELECTION",
     text: "  useful   text  ",
-    level: "engineer",
+    promptProfileId: "profile-deep",
+    prompt: "untrusted message prompt",
     webSearchEnabled: true,
     requestId: "request-42"
   }, {});
@@ -127,8 +151,9 @@ test("EXPLAIN_SELECTION validates, normalizes, and forwards a string request ID"
   });
   assert.equal(captured.settings.apiKey, "secret-key");
   assert.equal(captured.text, "useful text");
-  assert.equal(captured.level, "engineer");
+  assert.equal(captured.prompt, "LATEST saved private prompt.");
   assert.equal(captured.webSearchEnabled, true);
+  assert.equal(JSON.stringify(response).includes("LATEST saved private prompt."), false);
   assert.equal(JSON.stringify(response).includes("secret-key"), false);
 });
 
@@ -157,7 +182,7 @@ test("EXPLAIN_SELECTION rejects malformed request IDs without coercion or depend
     const response = await handler({
       type: "EXPLAIN_SELECTION",
       text: "Selected text",
-      level: "child",
+      promptProfileId: "profile-concise",
       requestId
     }, {});
     assert.deepEqual(response, {
@@ -191,7 +216,7 @@ test("EXPLAIN_SELECTION echoes request ID on selection validation failures", asy
   const response = await handler({
     type: "EXPLAIN_SELECTION",
     text: "   ",
-    level: "child",
+    promptProfileId: "profile-concise",
     requestId: "request-selection"
   }, {});
 
@@ -204,7 +229,7 @@ test("EXPLAIN_SELECTION echoes request ID on selection validation failures", asy
   assert.equal(explainCalls, 0);
 });
 
-test("EXPLAIN_SELECTION echoes request ID on level validation failures", async () => {
+test("EXPLAIN_SELECTION rejects malformed profile IDs before loading settings", async () => {
   let loadCalls = 0;
   const handler = createMessageHandler(createDependencies({
     loadSettings: async () => {
@@ -213,25 +238,26 @@ test("EXPLAIN_SELECTION echoes request ID on level validation failures", async (
     }
   }));
 
-  const response = await handler({
-    type: "EXPLAIN_SELECTION",
-    text: "Selected text",
-    level: "expert",
-    requestId: "request-level"
-  }, {});
+  for (const promptProfileId of [undefined, 42, "", "   ", {}]) {
+    const response = await handler({
+      type: "EXPLAIN_SELECTION",
+      text: "Selected text",
+      promptProfileId,
+      requestId: "request-profile"
+    }, {});
 
-  assert.deepEqual(response, {
-    ok: false,
-    error: { code: "BAD_LEVEL", message: "Invalid explanation level." },
-    requestId: "request-level"
-  });
+    assert.deepEqual(response, {
+      ok: false,
+      error: { code: "BAD_PROFILE", message: "Choose an available prompt profile." },
+      requestId: "request-profile"
+    });
+  }
   assert.equal(loadCalls, 0);
 });
 
-test("EXPLAIN_SELECTION echoes request ID on incomplete configuration", async () => {
+test("EXPLAIN_SELECTION rejects unknown profile IDs from latest settings without calling the model", async () => {
   let explainCalls = 0;
   const handler = createMessageHandler(createDependencies({
-    loadSettings: async () => ({ enabled: true, endpoint: "", apiKey: "", model: "" }),
     explain: async () => {
       explainCalls += 1;
       return "unreachable";
@@ -241,7 +267,33 @@ test("EXPLAIN_SELECTION echoes request ID on incomplete configuration", async ()
   const response = await handler({
     type: "EXPLAIN_SELECTION",
     text: "Selected text",
-    level: "child",
+    promptProfileId: "profile-removed",
+    requestId: "request-profile-removed"
+  }, {});
+
+  assert.deepEqual(response, {
+    ok: false,
+    error: { code: "BAD_PROFILE", message: "Choose an available prompt profile." },
+    requestId: "request-profile-removed"
+  });
+  assert.equal(explainCalls, 0);
+  assert.equal(JSON.stringify(response).includes("Use concise bullets."), false);
+});
+
+test("EXPLAIN_SELECTION echoes request ID on incomplete configuration", async () => {
+  let explainCalls = 0;
+  const handler = createMessageHandler(createDependencies({
+    loadSettings: async () => ({ ...configuredSettings, endpoint: "", apiKey: "", model: "" }),
+    explain: async () => {
+      explainCalls += 1;
+      return "unreachable";
+    }
+  }));
+
+  const response = await handler({
+    type: "EXPLAIN_SELECTION",
+    text: "Selected text",
+    promptProfileId: "profile-concise",
     requestId: "request-config"
   }, {});
 
@@ -258,10 +310,10 @@ test("EXPLAIN_SELECTION echoes request ID on incomplete configuration", async ()
 
 test("EXPLAIN_SELECTION preserves safe request errors and echoes request ID", async () => {
   const handler = createMessageHandler(createDependencies({
-    explain: async (settings, text, level) => requestExplanation(
+    explain: async (settings, text, prompt) => requestExplanation(
       settings,
       text,
-      level,
+      prompt,
       {
         fetchImpl: async () => ({ ok: false, status: 401 })
       }
@@ -271,7 +323,7 @@ test("EXPLAIN_SELECTION preserves safe request errors and echoes request ID", as
   const response = await handler({
     type: "EXPLAIN_SELECTION",
     text: "Selected text",
-    level: "child",
+    promptProfileId: "profile-concise",
     requestId: "request-auth"
   }, {});
 
@@ -298,7 +350,7 @@ test("EXPLAIN_SELECTION sanitizes arbitrary coded dependency errors and echoes r
   const response = await handler({
     type: "EXPLAIN_SELECTION",
     text: "Selected text",
-    level: "child",
+    promptProfileId: "profile-concise",
     requestId: "request-dependency"
   }, {});
 
@@ -324,7 +376,6 @@ test("OPEN_OPTIONS invokes the dependency and returns success", async () => {
   assert.equal(openCalls, 1);
 });
 
-
 test("EXPLAIN_SELECTION rejects requests while the extension is disabled", async () => {
   let explainCalls = 0;
   const handler = createMessageHandler(createDependencies({
@@ -335,7 +386,7 @@ test("EXPLAIN_SELECTION rejects requests while the extension is disabled", async
   const response = await handler({
     type: "EXPLAIN_SELECTION",
     text: "Selected text",
-    level: "child",
+    promptProfileId: "profile-concise",
     requestId: "disabled-request"
   }, {});
 
@@ -347,7 +398,7 @@ test("EXPLAIN_SELECTION rejects requests while the extension is disabled", async
   assert.equal(explainCalls, 0);
 });
 
-test("SAVE_CONFIGURATION accepts only validated configuration fields from the options page", async () => {
+test("SAVE_CONFIGURATION normalizes public fields, preserves exact prompt text, and returns no prompts", async () => {
   let captured;
   const handler = createMessageHandler(createDependencies({
     saveConfiguration: async (configuration) => {
@@ -359,9 +410,12 @@ test("SAVE_CONFIGURATION accepts only validated configuration fields from the op
     endpoint: "https://new.example.com/v1",
     apiKey: "new-key",
     model: "new-model",
-    level: "engineer",
-    systemPrompt: "Explain safely.",
     webSearchEnabled: true,
+    promptProfiles: [
+      { id: "profile-visual", title: "  Visual  ", prompt: "  Use diagrams.  ", extra: "ignored" },
+      { id: "profile-audit", title: "Audit", prompt: "List assumptions and evidence." }
+    ],
+    activePromptProfileId: "profile-audit",
     enabled: true,
     settingsVersion: 999,
     extra: "ignored"
@@ -376,58 +430,96 @@ test("SAVE_CONFIGURATION accepts only validated configuration fields from the op
     endpoint: "https://new.example.com/v1",
     apiKey: "new-key",
     model: "new-model",
-    level: "engineer",
-    systemPrompt: "Explain safely.",
-    webSearchEnabled: true
+    webSearchEnabled: true,
+    promptProfiles: [
+      { id: "profile-visual", title: "Visual", prompt: "  Use diagrams.  " },
+      { id: "profile-audit", title: "Audit", prompt: "List assumptions and evidence." }
+    ],
+    activePromptProfileId: "profile-audit"
   });
   assert.deepEqual(response, { ok: true, enabled: false });
   assert.equal(JSON.stringify(response).includes("new-key"), false);
+  assert.equal(JSON.stringify(response).includes("Use diagrams."), false);
+  assert.equal(JSON.stringify(response).includes("List assumptions"), false);
 });
 
-test("SAVE_CONFIGURATION rejects invalid or untrusted configuration messages", async () => {
+test("SAVE_CONFIGURATION rejects malformed, duplicate, and dangling profile data", async () => {
+  let saveCalls = 0;
+  const handler = createMessageHandler(createDependencies({
+    saveConfiguration: async () => { saveCalls += 1; }
+  }));
+  const base = {
+    endpoint: "https://new.example.com",
+    apiKey: "key",
+    model: "model",
+    webSearchEnabled: false
+  };
+  const invalidConfigurations = [
+    { ...base, promptProfiles: [], activePromptProfileId: "profile-none" },
+    {
+      ...base,
+      promptProfiles: [
+        { id: "profile-a", title: "Same", prompt: "First" },
+        { id: "profile-b", title: "same", prompt: "Second" }
+      ],
+      activePromptProfileId: "profile-a"
+    },
+    {
+      ...base,
+      promptProfiles: [{ id: "profile-a", title: "Only", prompt: "Prompt" }],
+      activePromptProfileId: "profile-missing"
+    }
+  ];
+
+  for (const configuration of invalidConfigurations) {
+    const response = await handler(
+      { type: "SAVE_CONFIGURATION", configuration },
+      { url: "chrome-extension://test/options/options.html" }
+    );
+    assert.deepEqual(response, {
+      ok: false,
+      error: { code: "BAD_MESSAGE", message: "Invalid configuration." }
+    });
+  }
+  assert.equal(saveCalls, 0);
+});
+
+test("SAVE_CONFIGURATION rejects untrusted senders before saving private prompts", async () => {
   let saveCalls = 0;
   const handler = createMessageHandler(createDependencies({
     saveConfiguration: async () => { saveCalls += 1; }
   }));
 
-  const invalid = await handler({
+  const response = await handler({
     type: "SAVE_CONFIGURATION",
     configuration: {
       endpoint: "https://new.example.com",
       apiKey: "key",
       model: "model",
-      level: "expert",
-      systemPrompt: "Prompt"
-    }
-  }, { url: "chrome-extension://test/options/options.html" });
-  const untrusted = await handler({
-    type: "SAVE_CONFIGURATION",
-    configuration: {
-      endpoint: "https://new.example.com",
-      apiKey: "key",
-      model: "model",
-      level: "child",
-      systemPrompt: "Prompt"
+      webSearchEnabled: false,
+      promptProfiles: [{ id: "profile-a", title: "Only", prompt: "Private prompt" }],
+      activePromptProfileId: "profile-a"
     }
   }, { url: "https://hostile.example/page" });
 
-  assert.deepEqual(invalid, {
-    ok: false,
-    error: { code: "BAD_MESSAGE", message: "Invalid configuration." }
-  });
-  assert.deepEqual(untrusted, {
+  assert.deepEqual(response, {
     ok: false,
     error: { code: "FORBIDDEN", message: "This message is not allowed from this context." }
   });
   assert.equal(saveCalls, 0);
 });
 
-test("TEST_CONNECTION is options-only, uses a fixed sample, and remains allowed while disabled", async () => {
+test("TEST_CONNECTION uses the active saved profile with web search disabled while disabled", async () => {
   let captured;
   const handler = createMessageHandler(createDependencies({
-    loadSettings: async () => ({ ...configuredSettings, enabled: false, level: "engineer" }),
-    explain: async (settings, text, level, webSearchEnabled) => {
-      captured = { settings, text, level, webSearchEnabled };
+    loadSettings: async () => ({
+      ...configuredSettings,
+      enabled: false,
+      webSearchEnabled: true,
+      activePromptProfileId: "profile-deep"
+    }),
+    explain: async (settings, text, prompt, webSearchEnabled) => {
+      captured = { settings, text, prompt, webSearchEnabled };
       return "Connection works";
     }
   }));
@@ -448,10 +540,9 @@ test("TEST_CONNECTION is options-only, uses a fixed sample, and remains allowed 
   assert.deepEqual(response, { ok: true, explanation: "Connection works" });
   assert.equal(captured.settings.enabled, false);
   assert.equal(captured.text, "A triangle has three sides.");
-  assert.equal(captured.level, "engineer");
+  assert.equal(captured.prompt, "Use mechanisms, tradeoffs, and edge cases.");
   assert.equal(captured.webSearchEnabled, false);
 });
-
 
 test("GET_CONFIGURATION returns private settings only to the trusted options page", async () => {
   const handler = createMessageHandler(createDependencies());
@@ -471,7 +562,6 @@ test("GET_CONFIGURATION returns private settings only to the trusted options pag
   assert.deepEqual(response, { ok: true, settings: configuredSettings });
 });
 
-
 test("EXPLAIN_SELECTION rejects a non-boolean web-search flag", async () => {
   let explainCalls = 0;
   const handler = createMessageHandler(createDependencies({
@@ -480,7 +570,7 @@ test("EXPLAIN_SELECTION rejects a non-boolean web-search flag", async () => {
   const response = await handler({
     type: "EXPLAIN_SELECTION",
     text: "Selected text",
-    level: "child",
+    promptProfileId: "profile-concise",
     webSearchEnabled: "yes",
     requestId: "bad-web-search"
   }, {});

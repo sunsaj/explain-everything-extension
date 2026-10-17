@@ -1,6 +1,6 @@
 # Selection Explainer
 
-Selection Explainer is a dependency-free Chrome Manifest V3 extension that explains text you select on ordinary webpages by calling an OpenAI-compatible LiteLLM endpoint. Ordinary explanations use Chat Completions; optional internet search uses the Responses API with the native web-search tool. It has no build step, hosted backend, analytics, or remote UI dependency.
+Selection Explainer is a dependency-free Chrome Manifest V3 extension that explains text you select on ordinary webpages by calling an OpenAI-compatible LiteLLM endpoint. User-managed prompt profiles control each explanation style. Ordinary explanations use Chat Completions; optional internet search uses the Responses API with the native web-search tool. It has no build step, hosted backend, analytics, or remote UI dependency.
 
 ## Install
 
@@ -26,22 +26,44 @@ Open Settings from the extension popup, the first-install page, or the panel's *
    The first two forms are normalized to the complete `/v1/chat/completions` endpoint. A deployment path prefix is preserved. Do not include URL credentials, a query string, or a fragment.
 2. Enter the API key accepted by that LiteLLM server.
 3. Enter an editable model name or LiteLLM alias, such as `gpt-4o-mini`. The alias must exist and be permitted by your server; the extension does not perform model discovery.
-4. Choose the default explanation level: **10-year-old** or **Engineer**.
-5. **Internet search is off by default.** Enable it only if the configured model supports native web search. Search uses the Responses API, may use substantially more time, tokens, and cost, and includes source citations when the provider returns them. The panel toggle can override this default for each explanation.
-6. Review or edit the system prompt. **Restore default prompt** puts the bundled prompt back in the form; save afterward to keep that change.
+4. In **Prompt profiles**, edit the title and complete prompt for each explanation style. The initial **10-year-old** and **Engineer** profiles are ordinary editable seed profiles, not hardcoded modes.
+5. Use **Set as default** on the profile that should be selected first in the floating panel.
+6. **Internet search is off by default.** Enable it only if the configured model supports native web search. Search uses the Responses API, may use substantially more time, tokens, and cost, and includes source citations when the provider returns them. The panel toggle can override this default for each explanation.
 7. Click **Save and grant access**. Chrome asks for access only to the normalized endpoint's origin. Granting is required before the background service worker can contact it. If access is denied, the earlier saved configuration is preserved.
-8. Click **Test connection**. This uses the saved configuration and sends a small test statement through the same explanation path. Success requires a valid assistant message in an OpenAI-compatible Chat Completions response.
+8. Click **Test connection**. This uses the active default prompt profile with internet search disabled and sends a small test statement through the ordinary explanation path. Success requires a valid assistant message in an OpenAI-compatible Chat Completions response.
 
 Remote endpoints must use HTTPS. Plain HTTP is accepted only for loopback development endpoints using `localhost`, `127.0.0.1`, or `[::1]`, for example `http://localhost:4000`.
+
+### Manage prompt profiles
+
+Prompt profiles pair a selector title with one complete editable prompt. Settings keeps profiles in the order shown in the floating selector.
+
+- Click **Add prompt profile** to append a new profile with a generated ID, a unique title, and a useful starter prompt.
+- Rename a profile by editing its title. Titles must be unique, non-empty, and no longer than 60 characters.
+- Click **Duplicate** to insert a copy after the source profile. The copied title and generated ID are made unique automatically.
+- Click **Set as default** to choose the profile selected when the panel has no still-valid current choice.
+- Click **Delete** to remove a profile. If the deleted profile was the default, the next profile becomes default, or the previous profile when the deleted item was last.
+
+At least one profile must remain, so the final profile cannot be deleted. Settings accepts 1–20 profiles, and each prompt must be non-empty. There is no extension prompt-length cap: unusually large prompts are preserved and are not silently lost, but they may increase token cost or exceed the provider context window. Add, rename, duplicate, delete, and default changes are saved together only after **Save and grant access** succeeds.
+
+### Existing-installation migration
+
+Settings from schema versions 1 and 2 automatically migrate to prompt profiles the next time the background service worker normalizes stored settings. The former editable prompt becomes the base of both **10-year-old** and **Engineer** profiles, with the former audience instructions added to the corresponding profile. The former explanation level chooses the default profile. Endpoint, API key, model, enabled state, and internet-search preference are preserved.
+
+Lossless schema versions 1 and 2 migration duplicates the complete legacy prompt into the two initial profiles, so the expanded version-3 settings can be nearly twice as large. The manifest requests `unlimitedStorage` so this v1/v2 migration can persist without Chrome's ordinary local-storage quota blocking the expanded object. Settings still use `chrome.storage.local`, access remains restricted to trusted extension contexts, and all writes remain serialized in the background service worker.
+
+Migration is deterministic and idempotent: already-migrated settings keep their profile IDs and are not duplicated. Legacy prompt text and complete audience instructions are never truncated during migration and are not silently lost. If legacy profile data is invalid, the extension falls back to the two valid initial profiles rather than exposing partial private settings.
 
 ## Use
 
 1. Visit an ordinary `http://` or `https://` webpage.
 2. Select text with the mouse or keyboard. Standard text selections inside an `input` or `textarea` are also supported.
 3. Click the **Explain** button at the bottom-right of the page.
-4. In the panel, switch between **10-year-old** and **Engineer** if needed. Turn on **Internet search** only when current information or external sources are needed. The selected level and search choice are used for the next Explain or Retry request.
-5. Use **Copy** to copy the current explanation, **Retry** to request it again, **Settings** to open configuration, and **Close** or `Escape` to close the panel.
-6. Use the extension popup's **Extension enabled** toggle to show or hide the Explain button globally. Open pages update without a page reload.
+4. Choose a **Prompt profile** in the panel. Profile titles appear in Settings order. A status refresh retains the current selection while that profile still exists; if it was removed, the panel falls back to the default profile.
+5. The selected profile ID is captured when **Explain** or **Retry** begins, and the selector is disabled while the request is loading. Changing the selector affects the next request only.
+6. Turn on **Internet search** only when current information or external sources are needed. The search choice is captured with the profile for the next Explain or Retry request.
+7. Use **Copy** to copy the current explanation, **Retry** to request it again, **Settings** to open configuration, and **Close** or `Escape` to close the panel.
+8. Use the extension popup's **Extension enabled** toggle to show or hide the Explain button globally. Open pages update without a page reload.
 
 **Selecting or highlighting text alone sends nothing.** Selected text is transmitted only after an explicit **Explain** or **Retry** action.
 
@@ -49,15 +71,21 @@ Selections are normalized before sending and are limited to 20,000 characters. R
 
 ## Privacy and security
 
-- The configured LiteLLM server receives the selected text, the system/audience instructions, the chosen model alias, and the API credential. Use only an endpoint you trust and prefer a limited-purpose key.
+- The configured LiteLLM server receives the selected text, the selected profile's full prompt, the chosen model alias, and the API credential. Use only an endpoint you trust and prefer a limited-purpose key.
 - The API key is stored in `chrome.storage.local` in the current Chrome profile. It is not placed in webpage DOM, popup output, content-script messages, logs, or Chrome sync storage. Chrome local storage is not a dedicated encrypted secret vault; a person or process with access to the browser profile may be able to recover it.
+- Full profile prompts stay in trusted extension storage and the background service worker; they are never included in settings or status data sent to webpage/content contexts.
+- Only each profile ID and title cross the public status boundary. The panel sends the selected profile ID with the request, and the worker validates it against the latest settings before resolving the full prompt.
 - The bearer key is added only by the background service worker and is sent only to the normalized configured endpoint after exact-origin permission is present.
 - The manifest-derived content executable graph cannot access private settings or `chrome.storage.local` and cannot use `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `sendBeacon`, or Authorization handling. The extension includes no telemetry, analytics, advertisements, remote scripts, remote fonts, or remote stylesheets.
-- Selected webpage text is treated as untrusted quoted data. The prompt tells the model not to follow instructions found inside the selection.
+- Selected webpage text is treated as untrusted quoted data. A non-editable safety wrapper tells the model not to follow instructions found inside the selection, even when a user edits the selected profile prompt.
 - Model responses are parsed into a safe local Markdown subset using `createElement` and `textContent`. Model-provided HTML is displayed as text and is never executed as markup or script.
 - Error messages are normalized and do not echo credentials, selected text, or provider response bodies.
 - HTTPS is required for every non-loopback endpoint. HTTP is limited to `localhost`, `127.0.0.1`, and `[::1]` development servers.
 - The extension does not provide a credential proxy. If your LiteLLM server is unavailable, blocked, or misconfigured, the extension cannot route around it.
+
+## Typography
+
+Selection Explainer uses the bundled local Inter variable font as its primary font, with local system fallbacks if font loading fails. It does not load remote fonts. Body and explanations use weight 400; secondary labels and metadata use 500; controls use 550–600; Markdown strong text uses 600; and headings and primary titles use 650–700. Product styles do not use the former 750–850 weights. Code blocks retain the existing monospace stack.
 
 ## Protected pages
 
@@ -108,18 +136,19 @@ A connection failure reports that the configured LiteLLM endpoint could not be r
 Run all commands from the `chrome-extension` directory in Windows Command Prompt (`cmd.exe`). The test suite uses Node's built-in test runner and has no package dependencies.
 
 ```bat
-for /r %F in (*.js) do @node --check "%F" || exit /b 1
-node tests\helpers\update-product-hashes.js --check
 npm test
+for /r %F in (*.js) do @node --check "%F" || exit /b 1
 python -m json.tool manifest.json > nul
-node --test tests\package.test.js
+python -m json.tool tests\helpers\approved-product-hashes.json > nul
+node tests\helpers\update-product-hashes.js --check
+node --test tests\package-scanners.test.js tests\package-mutations.test.js tests\package.test.js tests\manifest.test.js
 ```
 
 `tests\package.test.js` enforces an explicit top-level manifest policy, root-contained recursive HTML/CSS/JavaScript references, parsed remote runtime-resource checks, empty inline script bodies, package path/type and UTF-8 hygiene, all-text secret scanning, the manifest-derived content private-settings boundary, the background-only request architecture, PNG signatures and IHDR dimensions, and deterministic icon bytes. `tests\package-mutations.test.js` copies the package into temporary directories and proves those checks reject focused security and packaging mutations without changing the real package.
 
 ### Maintain the approved product hashes
 
-The package verifiers attest every product file outside `tests`: `manifest.json`, `background.js`, all `content`, `options`, `popup`, `shared`, `icons`, and `scripts` files, plus `package.json` and this README. The approved inventory records the exact sorted path set and SHA-256 bytes, so a changed, missing, or unexpected product file fails before semantic package checks run. Test files and verifier helpers are intentionally excluded and remain code-review-controlled.
+The package verifiers attest every product file outside `tests`: `manifest.json`, `background.js`, all `content`, `options`, `popup`, `shared`, `icons`, and `scripts` files, plus `package.json` and this README. The approved inventory records the exact sorted path set and SHA-256 bytes, so a changed, missing, or unexpected product file fails before semantic package checks run. Test files and verifier helpers are intentionally excluded and remain code-review-controlled. Root `.git` and `.gitattributes` entries are VCS-only metadata: they are excluded from product inventory and package traversal, and runtime references into them are rejected.
 
 Before either updater mode generates an inventory, the runtime-reference policy rejects manifest entries and local JavaScript, HTML, or CSS dependency edges that resolve into `tests/**`. The same policy runs through product attestation in every top-level package verifier, so manually approving regenerated hashes cannot make verifier-only files runtime-reachable. Test files and verifier helpers may remain excluded only while no product runtime reference points at them.
 
@@ -161,11 +190,12 @@ Record **Pass**, **Fail**, or **Not executed** for each item. Without a live Lit
 5. [ ] Selecting text alone creates no request.
 6. [ ] Mouse, keyboard, `input`, and `textarea` selections work.
 7. [ ] Empty and over-20,000-character selections show local errors without a network request.
-8. [ ] **10-year-old** and **Engineer** produce visibly different explanations.
-9. [ ] **Copy**, **Retry**, **Settings**, **Close**, and `Escape` work.
-10. [ ] Enabling or disabling the extension changes button visibility on open pages without a reload.
-11. [ ] Long output scrolls inside the panel on desktop and in a narrow viewport.
-12. [ ] Invalid key, 429, timeout, offline, 5xx, invalid JSON, and incompatible responses show sanitized actionable errors.
-13. [ ] Reloading the extension preserves saved settings.
-14. [ ] `chrome://` pages and the Chrome Web Store behave as documented.
-15. [ ] No API key appears in page DOM, popup output, content messages, or console logs.
+8. [ ] Add, rename, duplicate, delete, and **Set as default** work; the final remaining profile cannot be deleted.
+9. [ ] Saved profile titles appear in Settings order, and each selected profile produces its configured explanation style.
+10. [ ] **Copy**, **Retry**, **Settings**, **Close**, and `Escape` work.
+11. [ ] Enabling or disabling the extension changes button visibility on open pages without a reload.
+12. [ ] Long output scrolls inside the panel on desktop and in a narrow viewport.
+13. [ ] Invalid key, 429, timeout, offline, 5xx, invalid JSON, and incompatible responses show sanitized actionable errors.
+14. [ ] Reloading the extension preserves saved prompt profiles and other settings.
+15. [ ] `chrome://` pages and the Chrome Web Store behave as documented.
+16. [ ] No API key or full profile prompt appears in page DOM, popup output, content messages, or console logs.

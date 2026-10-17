@@ -46,20 +46,11 @@
             <p id="apiKeyError" class="field-error" data-error-for="apiKey"></p>
           </div>
 
-          <div class="field">
+          <div class="field field-wide">
             <label for="model">Model or LiteLLM alias</label>
             <input id="model" name="model" type="text" autocomplete="off"
               aria-describedby="modelError" required disabled>
             <p id="modelError" class="field-error" data-error-for="model"></p>
-          </div>
-
-          <div class="field">
-            <label for="level">Default explanation level</label>
-            <select id="level" name="level" aria-describedby="levelError" disabled>
-              <option value="child">10-year-old</option>
-              <option value="engineer">Engineer</option>
-            </select>
-            <p id="levelError" class="field-error" data-error-for="level"></p>
           </div>
 
           <div class="field field-wide web-search-setting">
@@ -74,20 +65,19 @@
         </div>
       </section>
 
-      <section class="settings-section" aria-labelledby="promptHeading">
-        <div class="section-heading prompt-heading">
-          <div>
-            <h2 id="promptHeading">System prompt</h2>
-            <p>Set the instructions used for every explanation.</p>
-          </div>
-          <button id="restorePrompt" class="secondary-button" type="button" disabled>Restore default prompt</button>
+      <section class="settings-section" aria-labelledby="promptProfilesHeading">
+        <div class="section-heading">
+          <h2 id="promptProfilesHeading">Prompt profiles</h2>
+          <p id="promptProfilesHint">Create up to 20 explanation styles. The default profile is selected first in the floating panel.</p>
         </div>
 
-        <div class="field">
-          <label class="visually-hidden" for="systemPrompt">System prompt</label>
-          <textarea id="systemPrompt" name="systemPrompt" rows="12"
-            aria-describedby="systemPromptError" required disabled></textarea>
-          <p id="systemPromptError" class="field-error" data-error-for="systemPrompt"></p>
+        <div id="promptProfilesList" class="profile-list" role="list" aria-describedby="promptProfilesHint promptProfilesError activePromptProfileIdError"></div>
+        <p id="promptProfilesError" class="field-error manager-error" data-error-for="promptProfiles"></p>
+        <p id="activePromptProfileIdError" class="field-error manager-error" data-error-for="activePromptProfileId"></p>
+
+        <div class="profiles-footer">
+          <p class="hint">Profile prompts are private settings and are sent only to your configured endpoint when used.</p>
+          <button id="addPromptProfile" class="secondary-button" type="button" disabled>Add prompt profile</button>
         </div>
       </section>
 

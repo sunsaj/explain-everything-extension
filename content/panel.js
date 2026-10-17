@@ -1,7 +1,15 @@
+import {
+  hasVisibleProfileTitleContent,
+  profileTitlesEqual,
+  sanitizeProfileTitle,
+  unicodeCodePointLength
+} from "../shared/profile-titles.js";
 import { renderMarkdown } from "./markdown.js";
 
 const HOST_TAG = "selection-explainer-panel-host";
-const VALID_LEVELS = new Set(["child", "engineer"]);
+const PROFILE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+const MAX_PROFILE_COUNT = 20;
+const MAX_PROFILE_TITLE_LENGTH = 60;
 const EMPTY_SELECTION_MESSAGE = "Select text on the page, then choose Explain.";
 const HOST_STYLE_PROPERTIES = Object.freeze({
   all: "initial",
@@ -26,7 +34,7 @@ const HOST_STYLE_PROPERTIES = Object.freeze({
   opacity: "1",
   transform: "none",
   filter: "none",
-  "font-family": "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+  "font-family": "Selection Inter, Segoe UI Variable Text, SF Pro Text, -apple-system, BlinkMacSystemFont, Segoe UI, system-ui, sans-serif",
   "font-size": "16px",
   "font-style": "normal",
   "font-weight": "400",
@@ -66,13 +74,63 @@ function focusWithoutScroll(element) {
   }
 }
 
+function validatePromptProfileSummaries(summaries) {
+  if (
+    !Array.isArray(summaries)
+    || summaries.length < 1
+    || summaries.length > MAX_PROFILE_COUNT
+  ) {
+    return null;
+  }
+
+  const ids = new Set();
+  const titles = [];
+  const validated = [];
+
+  for (const summary of summaries) {
+    if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
+      return null;
+    }
+    const keys = Object.keys(summary);
+    if (
+      keys.length !== 2
+      || !Object.prototype.hasOwnProperty.call(summary, "id")
+      || !Object.prototype.hasOwnProperty.call(summary, "title")
+    ) {
+      return null;
+    }
+
+    const { id, title } = summary;
+    const normalizedTitle = sanitizeProfileTitle(title);
+    if (
+      typeof id !== "string"
+      || !PROFILE_ID_PATTERN.test(id)
+      || ids.has(id)
+      || typeof title !== "string"
+      || !normalizedTitle
+      || normalizedTitle !== title
+      || !hasVisibleProfileTitleContent(normalizedTitle)
+      || unicodeCodePointLength(normalizedTitle) > MAX_PROFILE_TITLE_LENGTH
+      || titles.some((existingTitle) => profileTitlesEqual(existingTitle, normalizedTitle))
+    ) {
+      return null;
+    }
+
+    ids.add(id);
+    titles.push(normalizedTitle);
+    validated.push({ id, title });
+  }
+
+  return validated;
+}
+
 export function createExplainerPanel({
-  initialLevel = "child",
   initialWebSearchEnabled = false,
   onExplain = () => {},
   onRetry = () => {},
   onCopy = () => {},
   onSettings = () => {},
+  onPromptProfileChange = () => {},
   onClose = () => {}
 } = {}) {
   if (activePanelController) {
@@ -107,6 +165,7 @@ export function createExplainerPanel({
   const dialog = document.createElement("section");
   dialog.id = "selection-explainer-dialog";
   dialog.className = "panel";
+  dialog.dataset.view = "idle";
   dialog.hidden = true;
   dialog.setAttribute("role", "dialog");
   dialog.setAttribute("aria-labelledby", "selection-explainer-title");
@@ -127,29 +186,19 @@ export function createExplainerPanel({
   const body = document.createElement("div");
   body.className = "panel__body";
 
-  const levelField = document.createElement("div");
-  levelField.className = "field";
+  const profileField = document.createElement("div");
+  profileField.className = "field";
 
-  const levelLabel = document.createElement("label");
-  levelLabel.className = "field__label";
-  levelLabel.htmlFor = "selection-explainer-level";
-  levelLabel.textContent = "Explanation level";
+  const profileLabel = document.createElement("label");
+  profileLabel.className = "field__label";
+  profileLabel.htmlFor = "selection-explainer-profile";
+  profileLabel.textContent = "Prompt profile";
 
-  const levelSelect = document.createElement("select");
-  levelSelect.id = "selection-explainer-level";
-  levelSelect.className = "level-select";
-  levelSelect.setAttribute("aria-label", "Explanation level");
-
-  const childOption = document.createElement("option");
-  childOption.value = "child";
-  childOption.textContent = "10-year-old";
-
-  const engineerOption = document.createElement("option");
-  engineerOption.value = "engineer";
-  engineerOption.textContent = "Engineer";
-
-  levelSelect.append(childOption, engineerOption);
-  levelField.append(levelLabel, levelSelect);
+  const profileSelect = document.createElement("select");
+  profileSelect.id = "selection-explainer-profile";
+  profileSelect.className = "level-select";
+  profileSelect.setAttribute("aria-label", "Prompt profile");
+  profileField.append(profileLabel, profileSelect);
 
   const webSearchControl = document.createElement("label");
   webSearchControl.className = "web-search-control";
@@ -195,7 +244,7 @@ export function createExplainerPanel({
   response.hidden = true;
   response.setAttribute("aria-label", "Explanation");
 
-  body.append(levelField, webSearchControl, selectionGroup, status, response);
+  body.append(profileField, webSearchControl, selectionGroup, status, response);
 
   const footer = document.createElement("footer");
   footer.className = "panel__footer";
@@ -218,14 +267,39 @@ export function createExplainerPanel({
   shadow.append(stylesheet, root);
   document.documentElement.append(host);
 
-  function setLevel(level) {
-    if (VALID_LEVELS.has(level)) {
-      levelSelect.value = level;
+  let promptProfileIds = new Set();
+
+  function setPromptProfiles(summaries, selectedId) {
+    const profiles = validatePromptProfileSummaries(summaries);
+    if (!profiles) return false;
+
+    const currentId = profileSelect.value;
+    const nextIds = new Set(profiles.map(({ id }) => id));
+    profileSelect.textContent = "";
+    for (const { id, title } of profiles) {
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = title;
+      profileSelect.append(option);
     }
+
+    promptProfileIds = nextIds;
+    profileSelect.value = nextIds.has(currentId)
+      ? currentId
+      : nextIds.has(selectedId)
+        ? selectedId
+        : profiles[0].id;
+    return true;
   }
 
-  function getLevel() {
-    return levelSelect.value;
+  function setPromptProfileId(id) {
+    if (!promptProfileIds.has(id)) return false;
+    profileSelect.value = id;
+    return true;
+  }
+
+  function getPromptProfileId() {
+    return promptProfileIds.has(profileSelect.value) ? profileSelect.value : "";
   }
 
   function setWebSearchEnabled(enabled) {
@@ -239,7 +313,7 @@ export function createExplainerPanel({
   function setBusy(isBusy) {
     explainButton.disabled = isBusy;
     retryButton.disabled = isBusy;
-    levelSelect.disabled = isBusy;
+    profileSelect.disabled = isBusy;
     webSearchCheckbox.disabled = isBusy;
   }
 
@@ -273,6 +347,7 @@ export function createExplainerPanel({
   }
 
   function setSelection(text) {
+    dialog.dataset.view = "idle";
     const selectionText = typeof text === "string" ? text : "";
     const hasSelection = selectionText.trim().length > 0;
     selectionPreview.textContent = hasSelection
@@ -294,6 +369,7 @@ export function createExplainerPanel({
   }
 
   function setLoading({ webSearchEnabled = getWebSearchEnabled() } = {}) {
+    dialog.dataset.view = "loading";
     openDialog({ focus: false });
     dialog.setAttribute("aria-busy", "true");
     setBusy(true);
@@ -310,6 +386,7 @@ export function createExplainerPanel({
   }
 
   function setExplanation(text) {
+    dialog.dataset.view = "result";
     const explanationText = typeof text === "string" ? text : "";
     dialog.setAttribute("aria-busy", "false");
     setBusy(false);
@@ -325,6 +402,7 @@ export function createExplainerPanel({
   }
 
   function setError(message, { showSettings = false } = {}) {
+    dialog.dataset.view = "error";
     const errorMessage = typeof message === "string" && message.trim()
       ? message
       : "The explanation could not be completed. Try again.";
@@ -364,9 +442,13 @@ export function createExplainerPanel({
     if (event.isTrusted) onRetry();
   });
   settingsButton.addEventListener("click", onSettings);
+  profileSelect.addEventListener("change", () => {
+    if (promptProfileIds.has(profileSelect.value)) {
+      onPromptProfileChange();
+    }
+  });
   shadow.addEventListener("keydown", handleKeydown);
 
-  setLevel(VALID_LEVELS.has(initialLevel) ? initialLevel : "child");
   setWebSearchEnabled(initialWebSearchEnabled);
 
   let controller;
@@ -384,8 +466,9 @@ export function createExplainerPanel({
   controller = {
     setVisible,
     setSelection,
-    setLevel,
-    getLevel,
+    setPromptProfiles,
+    setPromptProfileId,
+    getPromptProfileId,
     setWebSearchEnabled,
     getWebSearchEnabled,
     setLoading,

@@ -3,7 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 
 const SOURCE_EXTENSIONS = new Set([".css", ".html", ".js"]);
-const VERIFIER_ONLY_DIRECTORIES = new Set(["tests"]);
+const RUNTIME_EXCLUDED_ROOT_ENTRIES = new Set(["tests", ".git", ".gitattributes"]);
 
 function packagePath(extensionRoot, candidate) {
   return relative(extensionRoot, candidate).split(sep).join("/");
@@ -23,7 +23,7 @@ function isExternalReference(reference) {
 
 export function isVerifierOnlyPackagePath(relativePath) {
   const [topLevelDirectory] = relativePath.split("/");
-  return VERIFIER_ONLY_DIRECTORIES.has(topLevelDirectory.toLowerCase());
+  return RUNTIME_EXCLUDED_ROOT_ENTRIES.has(topLevelDirectory.toLowerCase());
 }
 
 export function assertRuntimeReferenceAllowed(
@@ -236,7 +236,7 @@ function resolveRuntimeReference(extensionRoot, sourcePath, reference, options =
 async function collectProductSourceFiles(directory, extensionRoot, files) {
   const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
-    if (directory === extensionRoot && entry.name.toLowerCase() === "tests") continue;
+    if (directory === extensionRoot && RUNTIME_EXCLUDED_ROOT_ENTRIES.has(entry.name.toLowerCase())) continue;
     const entryPath = resolve(directory, entry.name);
     if (entry.isDirectory()) {
       await collectProductSourceFiles(entryPath, extensionRoot, files);

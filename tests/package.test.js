@@ -24,6 +24,7 @@ const extensionRoot = fileURLToPath(new URL("../", import.meta.url));
 const hashHelperPath = fileURLToPath(
   new URL("./helpers/update-product-hashes.js", import.meta.url)
 );
+const gitAttributesUrl = new URL("../.gitattributes", import.meta.url);
 
 test("manifest and local source references resolve to packaged files", async () => {
   await verifyResourceGraph(extensionRoot);
@@ -53,13 +54,15 @@ test("README exposes every required user documentation section", async () => {
   await verifyReadme(extensionRoot);
 });
 
-test("approved product inventory exactly attests 28 product files and excludes verifier-only tests", async () => {
+test("approved product inventory exactly attests 33 product files and excludes verifier and VCS-only metadata", async () => {
   await verifyProductAttestation(extensionRoot);
   const first = await createProductHashInventory(extensionRoot);
   const second = await createProductHashInventory(extensionRoot);
   assert.deepEqual(first, second);
-  assert.equal(first.files.length, 28);
+  assert.equal(first.files.length, 33);
   assert.ok(first.files.every((entry) => !entry.path.startsWith("tests/")));
+  assert.ok(first.files.every((entry) => !entry.path.startsWith(".git/")));
+  assert.ok(first.files.every((entry) => entry.path !== ".gitattributes"));
   assert.equal(
     serializeProductHashInventory(first),
     await readFile(APPROVED_PRODUCT_HASHES_URL, "utf8")
@@ -85,4 +88,28 @@ test("product hash maintenance helper passes deterministic check mode", () => {
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /inventory is current for \d+ files/i);
+});
+
+test(".gitattributes enforces LF for attested text and binary handling for packaged assets", async () => {
+  const source = await readFile(gitAttributesUrl, "utf8").catch(() => "");
+
+  assert.doesNotMatch(source, /\r/);
+  for (const extension of ["css", "html", "js", "json", "md", "py", "txt"]) {
+    assert.match(source, new RegExp("^\\*\\." + extension + " text eol=lf$", "m"));
+  }
+  assert.match(source, /^\.gitattributes text eol=lf$/m);
+  assert.match(source, /^\*\.png binary$/m);
+  assert.match(source, /^\*\.woff2 binary$/m);
+});
+
+
+test("attested text product files already use LF bytes", async () => {
+  const inventory = JSON.parse(await readFile(APPROVED_PRODUCT_HASHES_URL, "utf8"));
+  const textExtensions = new Set(["css", "html", "js", "json", "md", "py", "txt"]);
+  for (const entry of inventory.files) {
+    const extension = entry.path.includes(".") ? entry.path.split(".").at(-1).toLowerCase() : "";
+    if (!textExtensions.has(extension)) continue;
+    const bytes = await readFile(new URL("../" + entry.path, import.meta.url));
+    assert.equal(bytes.includes(13), false, entry.path + " must contain LF-only text bytes");
+  }
 });

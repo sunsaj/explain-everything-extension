@@ -1,9 +1,9 @@
 import { getSafeRequestErrorDetails } from "./api.js";
+import { resolvePromptProfile } from "./profiles.js";
 import { getPublicStatus, isConfigurationReady, normalizeSettings, validateSettings } from "./settings.js";
 import { validateSelectedText } from "./selection.js";
 
 const CONNECTION_TEST_SAMPLE = "A triangle has three sides.";
-const VALID_LEVELS = new Set(["child", "engineer"]);
 
 const CONTROLLER_ERROR_DEFINITIONS = Object.freeze({
   INVALID_MESSAGE: Object.freeze({ code: "BAD_MESSAGE", message: "Invalid extension message." }),
@@ -14,7 +14,7 @@ const CONTROLLER_ERROR_DEFINITIONS = Object.freeze({
   FORBIDDEN: Object.freeze({ code: "FORBIDDEN", message: "This message is not allowed from this context." }),
   NO_SELECTION: Object.freeze({ code: "NO_SELECTION", message: "Highlight some text first." }),
   SELECTION_TOO_LONG: Object.freeze({ code: "SELECTION_TOO_LONG", message: "Select no more than 20,000 characters." }),
-  BAD_LEVEL: Object.freeze({ code: "BAD_LEVEL", message: "Invalid explanation level." }),
+  BAD_PROFILE: Object.freeze({ code: "BAD_PROFILE", message: "Choose an available prompt profile." }),
   BAD_WEB_SEARCH: Object.freeze({ code: "BAD_MESSAGE", message: "Web search flag must be boolean." }),
   DISABLED: Object.freeze({ code: "DISABLED", message: "The extension is disabled." }),
   NOT_CONFIGURED: Object.freeze({ code: "NOT_CONFIGURED", message: "Configure the LiteLLM endpoint, key, and model first." }),
@@ -58,35 +58,41 @@ function configurationFromMessage(value) {
     endpoint: value.endpoint,
     apiKey: value.apiKey,
     model: value.model,
-    level: value.level,
-    systemPrompt: value.systemPrompt,
-    webSearchEnabled: value.webSearchEnabled
+    webSearchEnabled: value.webSearchEnabled,
+    promptProfiles: value.promptProfiles,
+    activePromptProfileId: value.activePromptProfileId
   };
   if (
     typeof configuration.endpoint !== "string"
     || typeof configuration.apiKey !== "string"
     || typeof configuration.model !== "string"
-    || typeof configuration.systemPrompt !== "string"
     || typeof configuration.webSearchEnabled !== "boolean"
-    || !VALID_LEVELS.has(configuration.level)
     || !configuration.endpoint.trim()
     || !configuration.apiKey.trim()
     || !configuration.model.trim()
   ) {
     throw createControllerError("BAD_CONFIGURATION");
   }
-  const normalized = normalizeSettings({ enabled: true, ...configuration });
-  if (!validateSettings(normalized).valid) {
+
+  const candidate = { enabled: true, settingsVersion: 3, ...configuration };
+  if (!validateSettings(candidate).valid) {
     throw createControllerError("BAD_CONFIGURATION");
   }
+  const normalized = normalizeSettings(candidate);
   return {
     endpoint: normalized.endpoint,
     apiKey: normalized.apiKey,
     model: normalized.model,
-    level: normalized.level,
-    systemPrompt: normalized.systemPrompt,
-    webSearchEnabled: normalized.webSearchEnabled
+    webSearchEnabled: normalized.webSearchEnabled,
+    promptProfiles: normalized.promptProfiles,
+    activePromptProfileId: normalized.activePromptProfileId
   };
+}
+
+function resolvedPrompt(settings, promptProfileId) {
+  const profile = resolvePromptProfile(settings.promptProfiles, promptProfileId);
+  if (!profile) throw createControllerError("BAD_PROFILE");
+  return profile.prompt;
 }
 
 export function createMessageHandler({
@@ -133,10 +139,11 @@ export function createMessageHandler({
         if (!isTrustedOptionsSender(sender)) throw createControllerError("FORBIDDEN");
         const settings = normalizeSettings(await loadSettings());
         if (!isConfigurationReady(settings)) throw createControllerError("NOT_CONFIGURED");
+        const prompt = resolvedPrompt(settings, settings.activePromptProfileId);
         const explanation = await explain(
           settings,
           CONNECTION_TEST_SAMPLE,
-          settings.level,
+          prompt,
           false
         );
         return { ok: true, explanation };
@@ -148,17 +155,20 @@ export function createMessageHandler({
         requestId = message.requestId;
         const selection = validateSelectedText(message.text);
         if (!selection.valid) throw createControllerError(selectionErrorKind(selection.code));
-        if (!VALID_LEVELS.has(message.level)) throw createControllerError("BAD_LEVEL");
+        if (typeof message.promptProfileId !== "string" || !message.promptProfileId.trim()) {
+          throw createControllerError("BAD_PROFILE");
+        }
         if (message.webSearchEnabled !== undefined && typeof message.webSearchEnabled !== "boolean") {
           throw createControllerError("BAD_WEB_SEARCH");
         }
         const settings = normalizeSettings(await loadSettings());
         if (!settings.enabled) throw createControllerError("DISABLED");
         if (!isConfigurationReady(settings)) throw createControllerError("NOT_CONFIGURED");
+        const prompt = resolvedPrompt(settings, message.promptProfileId);
         const explanation = await explain(
           settings,
           selection.text,
-          message.level,
+          prompt,
           message.webSearchEnabled ?? settings.webSearchEnabled
         );
         return { ok: true, explanation, requestId };
